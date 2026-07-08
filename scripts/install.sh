@@ -166,7 +166,13 @@ if $HAS_OFFICE && [ -n "$PYTHON_EXE" ]; then
   log_info "Verifying..."
   for tool in wordmcp pptmcp excelmcp; do
     printf "  %-18s ... " "$tool"
-    $PYTHON_EXE -c "import ${tool}.server" 2>/dev/null && echo -e "${GREEN}OK${NC}" || echo -e "${YELLOW}WARN${NC}"
+    err=$($PYTHON_EXE -c "import ${tool}.server" 2>&1)
+    if [ $? -eq 0 ]; then
+      echo -e "${GREEN}OK${NC}"
+    else
+      echo -e "${YELLOW}WARN${NC}"
+      [ -n "$err" ] && echo -e "         ${err}" | head -3
+    fi
   done
 else
   log_step "4/6 Skipping Office tools"

@@ -195,9 +195,12 @@ if ($HasOfficeTools -and $PythonExe) {
     Write-Info "Verifying Office MCP tools..."
     foreach ($tool in @("wordmcp", "pptmcp", "excelmcp")) {
         Write-Host "  $tool ... " -NoNewline
-        $ok = & $PythonExe -c "import ${tool}.server" 2>&1
+        $err = & $PythonExe -c "import ${tool}.server" 2>&1
         if ($LASTEXITCODE -eq 0) { Write-Host "OK" -ForegroundColor Green }
-        else { Write-Host "WARN" -ForegroundColor Yellow }
+        else {
+            Write-Host "WARN" -ForegroundColor Yellow
+            if ($err) { Write-Host "         $err" -ForegroundColor DarkGray }
+        }
     }
 }
 else { Write-Step "4/6 Skipping Office tools (not available)" }
