@@ -268,6 +268,7 @@ if(!$SkipPython -and !$SkipOffice){
 # ---- 9. Copy install scripts & docs ----
 wI "Copying install scripts & docs..."
 cp "$ScriptDir\install.ps1" "$BundleDir\" -Force -EA SilentlyContinue
+cp "$ScriptDir\install.cmd" "$BundleDir\" -Force -EA SilentlyContinue
 cp "$ScriptDir\install.sh" "$BundleDir\" -Force -EA SilentlyContinue
 if(Test-Path "$ProjectDir\README.md"){cp "$ProjectDir\README.md" "$BundleDir\docs\" -Force}
 
@@ -306,6 +307,8 @@ Run PowerShell as Administrator:
 ```
 The installer auto-detects system runtimes and uses bundled ones if needed.
 All deps are installed from the unified `deps/` directory (no network required).
+
+Double-click `install.cmd` or run `install.ps1` as Administrator.
 "@
 Set-Content "$BundleDir\README.md" $rm -Encoding ASCII
 

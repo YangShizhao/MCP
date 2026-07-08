@@ -815,8 +815,9 @@ cp "$PROJECT_DIR/docs/tools-overview.md" "$BUNDLE_DIR/docs/" 2>/dev/null || true
 
 # ---- 9. 复制安装脚本到 bundle ----
 log_info "复制安装脚本..."
-cp "$PROJECT_DIR/scripts/install.ps1" "$BUNDLE_DIR/" 2>/dev/null || log_warn "install.ps1 尚不存在，将稍后创建"
-cp "$PROJECT_DIR/scripts/install.sh" "$BUNDLE_DIR/" 2>/dev/null || log_warn "install.sh 尚不存在，将稍后创建"
+cp "$PROJECT_DIR/scripts/install.ps1" "$BUNDLE_DIR/" 2>/dev/null || log_warn "install.ps1 not found"
+cp "$PROJECT_DIR/scripts/install.cmd" "$BUNDLE_DIR/" 2>/dev/null || log_warn "install.cmd not found"
+cp "$PROJECT_DIR/scripts/install.sh" "$BUNDLE_DIR/" 2>/dev/null || log_warn "install.sh not found"
 
 # ---- 10. 创建 bundle README ----
 cat > "$BUNDLE_DIR/README.md" << 'BUNDLEREADME'
