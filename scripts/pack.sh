@@ -539,7 +539,7 @@ log_ok "启动器脚本已创建"
 log_info "生成离线 MCP 配置文件..."
 
 CONFIG_DIR="$BUNDLE_DIR/config"
-INSTALL_BASE='C:\MCP-Tools'  # 默认 Windows 安装路径，安装时可按需修改
+INSTALL_BASE='%LOCALAPPDATA%\MCP-Tools'  # 用户级安装路径，无需管理员权限
 
 if ! $SKIP_PDF; then
   # Claude Code (仅 PDF)

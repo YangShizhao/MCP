@@ -189,7 +189,7 @@ wOK "Launchers created"
 
 # ---- 7. Config files ----
 wS "7/8 Generating MCP config files..."
-$cfg=Join-Path $BundleDir "config"; $IB='C:\MCP-Tools'
+$cfg=Join-Path $BundleDir "config"; $IB='%LOCALAPPDATA%\MCP-Tools'
 
 if(!$SkipPdf){
   $c=@{mcpServers=@{

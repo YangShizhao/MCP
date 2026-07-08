@@ -7,7 +7,7 @@
 
 set -e
 
-TARGET_PATH="/opt/mcp-tools"
+TARGET_PATH="$HOME/mcp-tools"
 CONFIGURE_PATH=true
 CONFIGURE_CLAUDE=true
 CONFIGURE_CLINE=true
@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do
     --no-path) CONFIGURE_PATH=false; shift ;;
     --no-claude) CONFIGURE_CLAUDE=false; shift ;;
     --no-cline) CONFIGURE_CLINE=false; shift ;;
-    --help|-h) echo "Usage: sudo bash install.sh [options]"; echo "  --target <path>  Install path (default: /opt/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; exit 0 ;;
+    --help|-h) echo "Usage: bash install.sh [options]"; echo "  --target <path>  Install path (default: $HOME/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; exit 0 ;;
     *) log_error "Unknown: $1"; exit 1 ;;
   esac
 done

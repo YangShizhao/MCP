@@ -88,16 +88,19 @@ Bundle contents / 打包产物包含:
 
 ### Install (on an offline machine) / 安装（在无网络的目标机器上执行）
 
-**Windows** — Double-click `install.cmd` (as Administrator), or:
+> No admin privileges required — installs to user-writable paths by default.
+> 无需管理员权限，默认安装到用户可写目录。
+
+**Windows** — Double-click `install.cmd`, or:
 ```powershell
-.\install.ps1                       # Default: C:\MCP-Tools
+.\install.ps1                       # Default: %LOCALAPPDATA%\MCP-Tools
 .\install.ps1 -TargetPath "D:\Tools"
 ```
 
 **Linux / Mac:**
 ```bash
-sudo bash install.sh                # Default: /opt/mcp-tools
-sudo bash install.sh --target /home/user/mcp-tools
+bash install.sh                     # Default: ~/mcp-tools
+bash install.sh --target ~/my-tools
 ```
 
 The installer automatically / 安装脚本自动:

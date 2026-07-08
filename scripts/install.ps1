@@ -3,9 +3,9 @@
     MCP Offline Installer (Windows PowerShell)
 .DESCRIPTION
     Installs MCP tools from the unified deps/ structure on an offline Windows machine.
-    Auto-detects system runtimes; uses bundled ones from deps/runtimes/ if needed.
+    No admin privileges required — installs to user-writable paths by default.
 .PARAMETER TargetPath
-    Install path (default: C:\MCP-Tools)
+    Install path (default: %LOCALAPPDATA%\MCP-Tools, no admin required)
 .PARAMETER AddToPath
     Add tools to system PATH (default: $true)
 .PARAMETER ConfigureClaudeCode
@@ -18,7 +18,7 @@
 #>
 
 param(
-    [string]$TargetPath = "C:\MCP-Tools",
+    [string]$TargetPath = "$env:LOCALAPPDATA\MCP-Tools",
     [bool]$AddToPath = $true,
     [bool]$ConfigureClaudeCode = $true,
     [bool]$ConfigureCline = $true
@@ -284,13 +284,11 @@ if ($ConfigureCline -and (Test-Path "$env:APPDATA\Code\User")) {
 # ---- PATH ----
 if ($AddToPath) {
     Write-Step "6/6 Configuring system PATH..."
-    $cur = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $cur = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($cur -notlike "*$TargetPath\bin*") {
-        try {
-            [Environment]::SetEnvironmentVariable("Path", "$cur;$TargetPath\bin", "Machine")
-            Write-OK "Added to PATH (new terminal required)"
-        } catch { Write-Warn "Cannot write PATH (admin required)" }
-    } else { Write-Info "Already in PATH" }
+        [Environment]::SetEnvironmentVariable("Path", "$cur;$TargetPath\bin", "User")
+        Write-OK "Added to user PATH (new terminal required)"
+    } else { Write-Info "Already in user PATH" }
 }
 else { Write-Step "6/6 Skipping PATH" }
 
