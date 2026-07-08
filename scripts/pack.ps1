@@ -318,6 +318,12 @@ $ap=Join-Path $OutputDir "${an}.zip"
 Compress-Archive $BundleDir -Dest $ap -CompressionLevel Fastest -Force
 $sz=[math]::Round((Get-Item $ap).Length/1MB,1)
 
+# Cleanup temporary workspace (already copied to bundle)
+wI "Cleaning up build temp files..."
+rm $WorkDir -Recurse -Force -EA SilentlyContinue
+rm "$OutputDir\get-pip.py" -Force -EA SilentlyContinue
+rm "$OutputDir\_ne" -Recurse -Force -EA SilentlyContinue
+
 # ---- 12. Done ----
 Write-Host ""
 Write-Host "==============================================" -F Green
@@ -333,5 +339,7 @@ Write-Host "|    deps/runtimes/ - Node.js + Python         |" -F Green
 Write-Host "|    tools/         - Tool source code         |" -F Green
 Write-Host "==============================================" -F Green
 Write-Host ""
+Write-Host "Press any key to close..." -ForegroundColor White
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 return $ap

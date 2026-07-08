@@ -982,6 +982,10 @@ else
   BUNDLE_SIZE="N/A"
 fi
 
+# Cleanup temporary workspace
+log_info "清理构建临时文件..."
+rm -rf "$WORK_DIR" 2>/dev/null || true
+
 # ---- 12. 完成 ----
 echo ""
 echo "╔══════════════════════════════════════════════╗"
@@ -1009,3 +1013,6 @@ echo ""
 echo "  将 build/${ARCHIVE_NAME}.zip 复制到目标机器，"
 echo "  解压后运行安装脚本即可。"
 echo ""
+echo "按 Enter 键关闭..."
+read -r
+

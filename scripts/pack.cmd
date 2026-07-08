@@ -70,6 +70,9 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
+echo.
+echo Press any key to close...
+pause >nul
 endlocal
 exit /b 0
 
@@ -103,5 +106,8 @@ echo.
 echo Tip: From PowerShell, you can run ".\pack.ps1" directly with the same parameters.
 echo      e.g.:  .\pack.ps1 -SkipOffice -SkipPython
 echo.
+echo.
+echo Press any key to close...
+pause >nul
 endlocal
 exit /b 0

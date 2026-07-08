@@ -318,5 +318,7 @@ Write-Host "|    deps/pip/    - Python wheels              |" -ForegroundColor G
 Write-Host "|    deps/runtimes/ - Node.js + Python         |" -ForegroundColor Green
 Write-Host "==============================================" -ForegroundColor Green
 Write-Host ""
+Write-Host "Press any key to close..." -ForegroundColor White
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 
 return $TargetPath
