@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pdf-reader": {
+      "command": "npx",
+      "args": ["@sylphx/pdf-reader-mcp"],
+      "description": "高性能 PDF 读取、搜索、内容提取和表格识别"
+    }
+  }
+}

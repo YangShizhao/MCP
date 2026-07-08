@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "word": {
+      "command": "python",
+      "args": ["-m", "wordmcp.server"],
+      "env": {
+        "WORD_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "WORD_ENABLE_WRITE": "true"
+      },
+      "description": "Word 文档处理 MCP — 51 个工具覆盖文档创建、模板组装、修订跟踪、结构 QA"
+    }
+  }
+}

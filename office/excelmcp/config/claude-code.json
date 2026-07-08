@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "excel": {
+      "command": "python",
+      "args": ["-m", "excelmcp.server"],
+      "env": {
+        "EXCEL_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "EXCEL_ENABLE_WRITE": "true"
+      },
+      "description": "Excel 电子表格 MCP — 65 个工具覆盖公式、图表、数据透视表、数据验证"
+    }
+  }
+}

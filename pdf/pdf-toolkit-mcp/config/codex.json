@@ -1,0 +1,8 @@
+{
+  "mcp_servers": {
+    "pdf-toolkit": {
+      "command": "npx",
+      "args": ["@beepboop2025/pdf-toolkit-mcp"]
+    }
+  }
+}

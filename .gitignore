@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Environment
+.env
+.env.local
+
+# Claude Code local config (not to be shared)
+.claude/
+
+# Build output
+build/
+*.zip
+*.tar.gz
+*.tgz
+
+# Download cache
+# Only cache npm/pip/runtimes — git repos are tracked as submodules
+.cache/npm/
+.cache/pip/
+.cache/runtimes/
+
+# Windows artifacts
+nul

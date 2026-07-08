@@ -1,0 +1,12 @@
+{
+  "mcp_servers": {
+    "ppt": {
+      "command": "python",
+      "args": ["-m", "pptmcp.server"],
+      "env": {
+        "PPT_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "PPT_ENABLE_WRITE": "true"
+      }
+    }
+  }
+}

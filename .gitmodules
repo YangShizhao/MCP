@@ -1,0 +1,6 @@
+[submodule ".cache/git/pdf-toolkit-mcp"]
+	path = .cache/git/pdf-toolkit-mcp
+	url = https://github.com/beepboop2025/pdf-toolkit-mcp
+[submodule ".cache/git/mcp-office"]
+	path = .cache/git/mcp-office
+	url = https://github.com/dosev-ai/mcp-office

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pdf-toolkit": {
+      "command": "npx",
+      "args": ["@beepboop2025/pdf-toolkit-mcp"],
+      "description": "全能 PDF 操作工具 — 37 个工具覆盖创建、编辑、合并、拆分、水印、表单、加密等"
+    }
+  }
+}

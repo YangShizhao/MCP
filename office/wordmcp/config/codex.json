@@ -1,0 +1,12 @@
+{
+  "mcp_servers": {
+    "word": {
+      "command": "python",
+      "args": ["-m", "wordmcp.server"],
+      "env": {
+        "WORD_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "WORD_ENABLE_WRITE": "true"
+      }
+    }
+  }
+}

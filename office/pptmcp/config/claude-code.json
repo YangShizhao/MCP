@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "ppt": {
+      "command": "python",
+      "args": ["-m", "pptmcp.server"],
+      "env": {
+        "PPT_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "PPT_ENABLE_WRITE": "true"
+      },
+      "description": "PowerPoint 演示文稿 MCP — 48 个工具含 Output Contract 框架和机器可验证的幻灯片规范"
+    }
+  }
+}

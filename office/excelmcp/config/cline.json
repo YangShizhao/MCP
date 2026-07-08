@@ -1,0 +1,12 @@
+{
+  "cline.mcpServers": {
+    "excel": {
+      "command": "python",
+      "args": ["-m", "excelmcp.server"],
+      "env": {
+        "EXCEL_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "EXCEL_ENABLE_WRITE": "true"
+      }
+    }
+  }
+}
