@@ -131,15 +131,36 @@ $wheels=Join-Path $BundleDeps "pip"; mkdir $wheels -Force|Out-Null
 _restorePip $wheels
 Push-Location $odir
 &$PythonExe -m pip install -e "./shared" --quiet 2>&1|Out-Null
-$pkgs=@("fastmcp==$PipFastmcp","python-docx==$PipDocx","python-pptx==$PipPptx","openpyxl==$PipXl","Pillow==$PipPil")
-foreach($s in $pkgs){
-  $n=($s -split '==')[0] -replace '-','_'
-  if(!$NoCache -and (ls "$wheels\${n}*.whl" -EA SilentlyContinue)){wC "Hit: $s";continue}
-  wI "  Download: $s"; &$PythonExe -m pip download -d $wheels $s 2>&1|%{Write-Host "         $_" -F DarkGray}
+
+# Try local-only resolution first (fast, no network)
+wI "  Checking local wheels..."
+$allLocal = $true
+foreach ($p in @("wordmcp","pptmcp","excelmcp")) {
+    $result = & $PythonExe -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1
+    if ($LASTEXITCODE -ne 0) { $allLocal = $false; break }
+    if ($result -match "Downloading|Collecting") {
+        $result | ForEach-Object { Write-Host "         $_" -ForegroundColor DarkGray }
+    }
 }
-foreach($p in @("wordmcp","pptmcp","excelmcp")){
-  wI "  Transitive deps: $p"
-  &$PythonExe -m pip download -d $wheels "$odir\$p" 2>&1|%{Write-Host "         $_" -F DarkGray}
+
+if ($allLocal) {
+    wOK "All wheels resolved from cache (no network needed)"
+} else {
+    # Missing wheels — download from network
+    wI "  Some wheels missing, downloading from network..."
+    $pkgs=@("fastmcp==$PipFastmcp","python-docx==$PipDocx","python-pptx==$PipPptx","openpyxl==$PipXl","Pillow==$PipPil")
+    foreach($s in $pkgs){
+        $n=($s -split '==')[0] -replace '-','_'
+        if(!$NoCache -and (ls "$wheels\${n}*.whl" -EA SilentlyContinue)){wC "Hit: $s";continue}
+        wI "  Download: $s"; &$PythonExe -m pip download -d $wheels $s 2>&1|%{Write-Host "         $_" -F DarkGray}
+    }
+    foreach($p in @("wordmcp","pptmcp","excelmcp")){
+        wI "  Transitive deps: $p"
+        &$PythonExe -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            &$PythonExe -m pip download -d $wheels "$odir\$p" 2>&1|%{Write-Host "         $_" -F DarkGray}
+        }
+    }
 }
 _savePip $wheels
 Pop-Location
