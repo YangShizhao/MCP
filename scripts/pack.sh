@@ -945,11 +945,11 @@ if command -v powershell.exe &> /dev/null; then
       WIN_BUILD_DIR=$(echo "$BUILD_DIR" | sed 's|^/mnt/\([a-zA-Z]\)/|\1:/|' | tr '/' '\\')
     fi
     log_info "WSL 检测: 使用 Windows 路径压缩"
-    powershell.exe -Command "Compress-Archive -Path '$WIN_BUNDLE_DIR' -DestinationPath '$WIN_BUILD_DIR\\${ARCHIVE_NAME}.zip' -Force" 2>&1
+    powershell.exe -Command "Compress-Archive -Path '$WIN_BUNDLE_DIR' -DestinationPath '$WIN_BUILD_DIR\\${ARCHIVE_NAME}.zip' -CompressionLevel Fastest -Force" 2>&1
     COMPRESS_EXIT=$?
   else
     # 原生 Windows (Git Bash)：路径可能可以直接使用
-    powershell.exe -Command "Compress-Archive -Path '$BUNDLE_DIR' -DestinationPath '$BUILD_DIR\\${ARCHIVE_NAME}.zip' -Force" 2>&1
+    powershell.exe -Command "Compress-Archive -Path '$BUNDLE_DIR' -DestinationPath '$BUILD_DIR\\${ARCHIVE_NAME}.zip' -CompressionLevel Fastest -Force" 2>&1
     COMPRESS_EXIT=$?
   fi
 
@@ -958,7 +958,7 @@ if command -v powershell.exe &> /dev/null; then
     log_warn "PowerShell 压缩失败，尝试使用 zip..."
     cd "$BUILD_DIR"
     if command -v zip &> /dev/null; then
-      zip -r "${ARCHIVE_NAME}.zip" "mcp-offline-bundle" -q
+      zip -r -1 "${ARCHIVE_NAME}.zip" "mcp-offline-bundle" -q
     else
       log_warn "未找到 zip 命令，使用 tar 打包"
       tar -czf "${ARCHIVE_NAME}.tar.gz" "mcp-offline-bundle"
@@ -966,7 +966,7 @@ if command -v powershell.exe &> /dev/null; then
   fi
 elif command -v zip &> /dev/null; then
   cd "$BUILD_DIR"
-  zip -r "${ARCHIVE_NAME}.zip" "mcp-offline-bundle" -q
+  zip -r -1 "${ARCHIVE_NAME}.zip" "mcp-offline-bundle" -q
 else
   log_warn "未找到 zip 命令，使用 tar 打包"
   cd "$BUILD_DIR"

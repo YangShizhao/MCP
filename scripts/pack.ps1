@@ -315,7 +315,7 @@ $an="mcp-offline-${Platform}-${DateStamp}"
 if($SkipNodejs){$an+="-no-nodejs"}; if($SkipPython){$an+="-no-python"}
 if($SkipPdf){$an+="-no-pdf"}; if($SkipOffice){$an+="-no-office"}
 $ap=Join-Path $OutputDir "${an}.zip"
-Compress-Archive $BundleDir -Dest $ap -Force
+Compress-Archive $BundleDir -Dest $ap -CompressionLevel Fastest -Force
 $sz=[math]::Round((Get-Item $ap).Length/1MB,1)
 
 # ---- 12. Done ----
