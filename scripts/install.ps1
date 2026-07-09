@@ -228,61 +228,102 @@ Write-Step "5/6 Configuring AI tool MCP settings..."
 if ($ConfigureClaudeCode) {
     $file = "$env:USERPROFILE\.claude.json"
 
-    # Read existing config; never overwrite, only merge
+    # Try to read and validate existing config
     $cfg = $null
+    $canWrite = $false
     if (Test-Path $file) {
-        try { $cfg = Get-Content $file -Raw | ConvertFrom-Json } catch {
-            Write-Warn "Cannot parse existing $file, backing up before updating"
-            Copy-Item $file "$file.bak" -Force
+        try {
+            $cfg = Get-Content $file -Raw | ConvertFrom-Json
+            # Validate: must be an object (not array, not primitive)
+            if ($cfg -is [System.Management.Automation.PSCustomObject] -or $cfg -is [hashtable]) {
+                $canWrite = $true
+            } else {
+                Write-Warn "$file exists but is not a valid JSON object (array or primitive)"
+            }
+        } catch {
+            Write-Warn "Cannot parse $file — not valid JSON"
         }
-    }
-    if (-not $cfg -or -not ($cfg | Get-Member -Name 'mcpServers' -MemberType NoteProperty -EA SilentlyContinue)) {
+    } else {
+        # No config yet — safe to create
+        $canWrite = $true
         $cfg = @{ mcpServers = @{} }
     }
 
-    # Only add new tools — never remove existing ones
-    $newCount = 0
-    if ($HasPdfTools) {
-        if (-not $cfg.mcpServers."pdf-reader") {
-            $cfg.mcpServers | Add-Member -Name "pdf-reader" -Value @{ command = "$TargetPath\bin\pdf-reader.cmd"; description = "PDF read, search, extract, render" } -MemberType NoteProperty
-            $newCount++
+    if (-not $canWrite) {
+        Write-Warn "Skipping automatic Claude Code config"
+        Write-Host ""
+        Write-Host "  ========================================" -ForegroundColor Yellow
+        Write-Host "  To manually configure, add this to $file" -ForegroundColor Yellow
+        Write-Host "  under the `"mcpServers`" section:" -ForegroundColor Yellow
+        Write-Host "  ========================================" -ForegroundColor Yellow
+        $cfgDir = Join-Path $TargetPath "config"
+        if (Test-Path "$cfgDir\claude-code-full.json") {
+            Write-Host "  See: $cfgDir\claude-code-full.json" -ForegroundColor White
+        } else {
+            foreach ($t in @("pdf-reader","pdf-toolkit","word","ppt","excel")) {
+                $cmd = Join-Path $TargetPath "bin\$t.cmd"
+                if (Test-Path $cmd) { Write-Host "  $t : $cmd" -ForegroundColor White }
+            }
         }
-        if (-not $cfg.mcpServers."pdf-toolkit") {
-            $cfg.mcpServers | Add-Member -Name "pdf-toolkit" -Value @{ command = "$TargetPath\bin\pdf-toolkit.cmd"; description = "PDF create, edit, merge, split, forms, encrypt" } -MemberType NoteProperty
-            $newCount++
+        Write-Host "  ========================================" -ForegroundColor Yellow
+        Write-Host ""
+    } else {
+        # Ensure mcpServers key exists
+        if (-not ($cfg | Get-Member -Name 'mcpServers' -MemberType NoteProperty -EA SilentlyContinue)) {
+            $cfg | Add-Member -Name 'mcpServers' -Value @{} -MemberType NoteProperty
         }
-    }
-    if ($HasOfficeTools -and $PythonExe) {
-        if (-not $cfg.mcpServers."word") {
-            $cfg.mcpServers | Add-Member -Name "word" -Value @{ command = "$TargetPath\bin\wordmcp.cmd"; env = @{ WORD_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; WORD_ENABLE_WRITE = "true" }; description = "Word docs - 51 tools" } -MemberType NoteProperty
-            $newCount++
-        }
-        if (-not $cfg.mcpServers."ppt") {
-            $cfg.mcpServers | Add-Member -Name "ppt" -Value @{ command = "$TargetPath\bin\pptmcp.cmd"; env = @{ PPT_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; PPT_ENABLE_WRITE = "true" }; description = "PowerPoint - 48 tools" } -MemberType NoteProperty
-            $newCount++
-        }
-        if (-not $cfg.mcpServers."excel") {
-            $cfg.mcpServers | Add-Member -Name "excel" -Value @{ command = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; EXCEL_ENABLE_WRITE = "true" }; description = "Excel - 65 tools" } -MemberType NoteProperty
-            $newCount++
-        }
-    }
 
-    $cfg | ConvertTo-Json -Depth 5 | Set-Content $file
-    if ($newCount -gt 0) { Write-OK "Claude Code: +$newCount tool(s) -> $file" }
-    else { Write-Info "Claude Code config already up to date" }
+        # Only add new tools — never remove existing ones
+        $newCount = 0
+        if ($HasPdfTools) {
+            if (-not $cfg.mcpServers."pdf-reader") {
+                $cfg.mcpServers | Add-Member -Name "pdf-reader" -Value @{ command = "$TargetPath\bin\pdf-reader.cmd"; description = "PDF read, search, extract, render" } -MemberType NoteProperty
+                $newCount++
+            }
+            if (-not $cfg.mcpServers."pdf-toolkit") {
+                $cfg.mcpServers | Add-Member -Name "pdf-toolkit" -Value @{ command = "$TargetPath\bin\pdf-toolkit.cmd"; description = "PDF create, edit, merge, split, forms, encrypt" } -MemberType NoteProperty
+                $newCount++
+            }
+        }
+        if ($HasOfficeTools -and $PythonExe) {
+            if (-not $cfg.mcpServers."word") {
+                $cfg.mcpServers | Add-Member -Name "word" -Value @{ command = "$TargetPath\bin\wordmcp.cmd"; env = @{ WORD_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; WORD_ENABLE_WRITE = "true" }; description = "Word docs - 51 tools" } -MemberType NoteProperty
+                $newCount++
+            }
+            if (-not $cfg.mcpServers."ppt") {
+                $cfg.mcpServers | Add-Member -Name "ppt" -Value @{ command = "$TargetPath\bin\pptmcp.cmd"; env = @{ PPT_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; PPT_ENABLE_WRITE = "true" }; description = "PowerPoint - 48 tools" } -MemberType NoteProperty
+                $newCount++
+            }
+            if (-not $cfg.mcpServers."excel") {
+                $cfg.mcpServers | Add-Member -Name "excel" -Value @{ command = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; EXCEL_ENABLE_WRITE = "true" }; description = "Excel - 65 tools" } -MemberType NoteProperty
+                $newCount++
+            }
+        }
+
+        $cfg | ConvertTo-Json -Depth 5 | Set-Content $file
+        if ($newCount -gt 0) { Write-OK "Claude Code: +$newCount tool(s) -> $file" }
+        else { Write-Info "Claude Code config already up to date" }
+    }
 }
 
 if ($ConfigureCline -and (Test-Path "$env:APPDATA\Code\User")) {
     $sfile = "$env:APPDATA\Code\User\settings.json"
     $s = $null
+    $canWrite = $false
     if (Test-Path $sfile) {
-        try { $s = Get-Content $sfile -Raw | ConvertFrom-Json } catch {
-            Write-Warn "Cannot parse existing settings, backing up"; Copy-Item $sfile "$sfile.bak" -Force
+        try {
+            $s = Get-Content $sfile -Raw | ConvertFrom-Json
+            if ($s -is [System.Management.Automation.PSCustomObject] -or $s -is [hashtable]) { $canWrite = $true }
+            else { Write-Warn "$sfile is not a JSON object, skipping Cline config" }
+        } catch {
+            Write-Warn "Cannot parse $sfile (not valid JSON), skipping Cline config"
         }
-    }
-    if (-not $s) { $s = @{} }
+    } else { $canWrite = $true; $s = @{} }
 
-    # Preserve existing cline.mcpServers, only add new ones
+    if (-not $canWrite) {
+        Write-Info "Cline config must be updated manually. See config/ templates in install dir."
+    } else {
+        # Preserve existing cline.mcpServers, only add new ones
     $existing = @{}
     if ($s | Get-Member -Name "cline.mcpServers" -MemberType NoteProperty -EA SilentlyContinue) { $existing = $s."cline.mcpServers" }
     $newC = 0
@@ -298,7 +339,8 @@ if ($ConfigureCline -and (Test-Path "$env:APPDATA\Code\User")) {
     $s | Add-Member -Name "cline.mcpServers" -Value $existing -MemberType NoteProperty -Force
     $s | ConvertTo-Json -Depth 5 | Set-Content $sfile
     if ($newC -gt 0) { Write-OK "Cline: +$newC tool(s) -> $sfile" }
-    else { Write-Info "Cline config already up to date" }
+        else { Write-Info "Cline config already up to date" }
+    }
 }
 
 # ---- PATH ----

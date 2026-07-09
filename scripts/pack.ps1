@@ -147,12 +147,26 @@ $osrc=Join-Path $BundleTools "mcp-office"; mkdir $osrc -Force|Out-Null
 $wheels=Join-Path $BundleDeps "pip"; mkdir $wheels -Force|Out-Null
 _restorePip $wheels
 Push-Location $odir
+$pyForPip = $PythonExe
+
+# If pack machine Python != 3.11, use bundled Python 3.11 for wheel download
+# This ensures binary compatibility (cp311 wheels for target machine)
+$py311 = "$BundleDeps\runtimes\python-3.11.9-amd64.exe"
+if ((Test-Path $py311) -and ($pyForPip -notmatch "3\.11")) {
+    wI "  Using Python 3.11 for binary-compatible wheel download..."
+    $tmpPy = Join-Path $OutputDir "_py311"
+    $null = Start-Process -FilePath $py311 -ArgumentList @("/quiet","InstallAllUsers=0","PrependPath=0","Include_test=0","TargetDir=$tmpPy") -Wait -NoNewWindow
+    if (Test-Path "$tmpPy\python.exe") { $pyForPip = "$tmpPy\python.exe"; wOK "Python 3.11 ready" }
+    else { wW "Could not set up Python 3.11, using system Python (wheels may be incompatible)" }
+    # Clear cp314-only wheels that won't work with 3.11
+    if (!$NoCache) { rm "$CachePip\*cp3*" -Force -EA SilentlyContinue; rm "$wheels\*cp3*" -Force -EA SilentlyContinue; _restorePip $wheels }
+}
 
 # Try local-only resolution first (fast, no network if cache was complete)
 wI "  Checking local wheels..."
 $allLocal = $true
 foreach ($p in @("wordmcp","pptmcp","excelmcp")) {
-    $result = & $PythonExe -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1
+    $result = & $pyForPip -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1
     if ($LASTEXITCODE -ne 0) { $allLocal = $false; break }
 }
 
@@ -165,7 +179,7 @@ if ($allLocal) {
     foreach ($n in $topPkgs) {
         if (ls "$wheels\${n}*.whl" -EA SilentlyContinue) { continue }
         wI "    Downloading: $n"
-        & $PythonExe -m pip download -d "$wheels" "$n" 2>&1 | ForEach-Object {
+        & $pyForPip -m pip download -d "$wheels" "$n" 2>&1 | ForEach-Object {
             if ($_ -match "Downloading|Saved|Collecting") { Write-Host "         $_" -ForegroundColor DarkGray }
         }
     }
@@ -173,9 +187,9 @@ if ($allLocal) {
     foreach ($p in @("wordmcp","pptmcp","excelmcp")) {
         wI "    Resolving: $p deps"
         # Try local first, then network
-        & $PythonExe -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1 | Out-Null
+        & $pyForPip -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            & $PythonExe -m pip download -d "$wheels" "$odir\$p" 2>&1 | ForEach-Object {
+            & $pyForPip -m pip download -d "$wheels" "$odir\$p" 2>&1 | ForEach-Object {
                 if ($_ -match "Downloading|Saved|Collecting") { Write-Host "         $_" -ForegroundColor DarkGray }
             }
         }
@@ -183,6 +197,7 @@ if ($allLocal) {
 }
 _savePip $wheels
 Pop-Location
+if ($pyForPip -ne $PythonExe -and $tmpPy) { rm $tmpPy -Recurse -Force -EA SilentlyContinue }
 $wc=(ls "$wheels\*.whl" -EA SilentlyContinue).Count
 $ws=[math]::Round(((ls "$wheels\*.whl" -EA SilentlyContinue|Measure-Object Length -Sum).Sum)/1MB,1)
 wOK "Python deps: $wc wheels ($ws MB)"
