@@ -123,14 +123,37 @@ if ($HasOfficeTools) {
         Write-OK "System Python meets requirement (>= $PythonReq)"
     }
     elseif (Test-Path $BundledPyInstaller) {
-        Write-Info "Installing Python $PythonReq to $PyInstallDir (silent, no admin)..."
-        $installArgs = @("/quiet", "InstallAllUsers=0", "PrependPath=0", "Include_test=0", "Include_tcltk=0", "TargetDir=$PyInstallDir")
-        $proc = Start-Process -FilePath $BundledPyInstaller -ArgumentList $installArgs -Wait -PassThru -NoNewWindow
-        if ($proc.ExitCode -eq 0 -and (Test-Path "$PyInstallDir\python.exe")) {
-            $PythonExe = "$PyInstallDir\python.exe"; $PythonSource = "bundled"
-            Write-OK "Python installed to $PyInstallDir"
+        Write-Host ""
+        Write-Host "  ========================================" -ForegroundColor Yellow
+        Write-Host "  Python >= $PythonReq not found." -ForegroundColor Yellow
+        Write-Host "  The Python installer will now open." -ForegroundColor Yellow
+        Write-Host "  Please complete the installation wizard." -ForegroundColor Yellow
+        Write-Host "  (Default options are fine — just click Install)" -ForegroundColor Yellow
+        Write-Host "  ========================================" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Press any key to start the Python installer..." -ForegroundColor White
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+        Start-Process -FilePath $BundledPyInstaller -Wait
+        Write-Host ""
+
+        # Re-check for Python after user install
+        $SysPy = (Get-Command python -ErrorAction SilentlyContinue).Source
+        if (-not $SysPy) { $SysPy = (Get-Command python3 -ErrorAction SilentlyContinue).Source }
+        $SysPyOK = $false
+        if ($SysPy) {
+            $raw = & $SysPy --version 2>&1
+            if ($raw -match '(\d+)\.(\d+)') {
+                if ([int]$Matches[1] -gt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -ge 11)) { $SysPyOK = $true }
+            }
+        }
+
+        if ($SysPyOK) {
+            $PythonExe = $SysPy; $PythonSource = "system"
+            Write-OK "Python installation detected: $(&$PythonExe --version 2>&1)"
         } else {
-            Write-Warn "Python install failed (exit: $($proc.ExitCode)). Office tools will be skipped."
+            Write-Warn "Python >= $PythonReq still not detected. Office tools will be skipped."
+            Write-Info "You can re-run install.ps1 after installing Python manually."
             $HasOfficeTools = $false
         }
     }
