@@ -59,12 +59,22 @@ Write-Host $l -F Magenta
 Write-Host "==============================================" -F Magenta
 Write-Host ""
 
+# Pre-calculate total steps for consistent numbering
+$totalSteps = 2  # env, dirs (always)
+if (!$SkipPdf)    { $totalSteps += 2 }  # npm + toolkit
+if (!$SkipOffice) { $totalSteps += 1 }  # mcp-office
+$totalSteps += 2  # launchers + config (always)
+if (!$SkipNodejs) { $totalSteps++ }
+if (!$SkipPython -and !$SkipOffice) { $totalSteps++ }
+$step = 0
+
 # ---- 1. Env checks ----
-wS "1/8 Checking environment..."
+$step++; wS "$step/$totalSteps Checking environment..."
 $nv=&node --version 2>&1; wOK "Node.js: $nv"
 if(([int]($nv -replace 'v' -replace '\..*')) -lt 22){wW "Node.js below 22.13.0; runtime will be bundled"}
 wOK "npm: v$(&npm --version 2>&1)"
 $gv=&git --version 2>&1; wOK "git: $($gv -replace 'git version ','')"
+
 $PythonExe=$null
 if(!$SkipOffice){
   $PythonExe=(Get-Command python -EA SilentlyContinue).Source
@@ -75,7 +85,7 @@ if(!$SkipOffice){
 }
 
 # ---- 2. Prepare dirs ----
-wS "2/8 Preparing build directories..."
+$step++; wS "$step/$totalSteps Preparing build directories..."
 _initCache
 if(Test-Path $OutputDir){rm $OutputDir -Recurse -Force -EA SilentlyContinue}
 foreach($d in @("$BundleDir\bin","$BundleDir\config","$BundleDir\docs",
@@ -84,7 +94,7 @@ $WorkDir=Join-Path $OutputDir "_workspace"; mkdir $WorkDir -Force|Out-Null
 
 # ---- 3. npm: pdf-reader-mcp ----
 if(!$SkipPdf){
-wS "3/8 Installing PDF MCP tools (npm)..."
+$step++; wS "$step/$totalSteps Installing PDF MCP tools (npm)..."
 Push-Location $WorkDir
 $cached=_cacheNpm $WorkDir
 if(!$cached){
@@ -100,7 +110,7 @@ wOK "@sylphx/pdf-reader-mcp v$v ($c deps)"
 Pop-Location
 
 # ---- 4. Git: pdf-toolkit-mcp ----
-wS "4/8 Building pdf-toolkit-mcp..."
+$step++; wS "$step/$totalSteps Building pdf-toolkit-mcp..."
 $repo=_cacheGit "pdf-toolkit-mcp" "https://github.com/beepboop2025/pdf-toolkit-mcp.git" $PdfToolkitRef
 $tdir=Join-Path $WorkDir "pdf-toolkit-mcp"; rm $tdir -Recurse -Force -EA SilentlyContinue
 cp $repo $tdir -Recurse -Force
@@ -109,6 +119,13 @@ wI "npm install..."; $null=&npm install --legacy-peer-deps 2>&1
 wI "npm build..."; $null=&npm run build 2>&1
 $dest=Join-Path $BundleTools "pdf-toolkit-mcp"; mkdir $dest -Force|Out-Null
 cp dist $dest -Recurse -Force; cp package.json $dest -Force
+# Copy node_modules so the tool can find its deps at runtime
+cp node_modules $dest -Recurse -Force
+# Verify critical scoped package was copied
+if (!(Test-Path "$dest\node_modules\@modelcontextprotocol\sdk")) {
+  wW "@modelcontextprotocol/sdk not in tools cache — forcing copy from shared"
+  cp "$BundleDeps\npm\node_modules\@modelcontextprotocol" "$dest\node_modules\@" -Recurse -Force -EA SilentlyContinue
+}
 $sm="$BundleDeps\npm\node_modules"
 ls "$tdir\node_modules" -Directory|%{$d=Join-Path $sm $_.Name; if(!(Test-Path $d)){cp $_.FullName $d -Recurse -Force}}
 ls "$tdir\node_modules" -Directory -Filter "@*" -EA SilentlyContinue|%{
@@ -121,7 +138,7 @@ Pop-Location; Pop-Location
 
 # ---- 5. Git: mcp-office ----
 if(!$SkipOffice){
-wS "5/8 Packaging mcp-office (Python)..."
+$step++; wS "$step/$totalSteps Packaging mcp-office (Python)..."
 $repo=_cacheGit "mcp-office" "https://github.com/dosev-ai/mcp-office.git" "main"
 $odir=Join-Path $WorkDir "mcp-office"; rm $odir -Recurse -Force -EA SilentlyContinue
 cp $repo $odir -Recurse -Force
@@ -130,35 +147,37 @@ $osrc=Join-Path $BundleTools "mcp-office"; mkdir $osrc -Force|Out-Null
 $wheels=Join-Path $BundleDeps "pip"; mkdir $wheels -Force|Out-Null
 _restorePip $wheels
 Push-Location $odir
-&$PythonExe -m pip install -e "./shared" --quiet 2>&1|Out-Null
 
-# Try local-only resolution first (fast, no network)
+# Try local-only resolution first (fast, no network if cache was complete)
 wI "  Checking local wheels..."
 $allLocal = $true
 foreach ($p in @("wordmcp","pptmcp","excelmcp")) {
     $result = & $PythonExe -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1
     if ($LASTEXITCODE -ne 0) { $allLocal = $false; break }
-    if ($result -match "Downloading|Collecting") {
-        $result | ForEach-Object { Write-Host "         $_" -ForegroundColor DarkGray }
-    }
 }
 
 if ($allLocal) {
     wOK "All wheels resolved from cache (no network needed)"
 } else {
-    # Missing wheels — download from network
+    # Download missing deps individually (much faster than full venv)
     wI "  Some wheels missing, downloading from network..."
-    $pkgs=@("fastmcp==$PipFastmcp","python-docx==$PipDocx","python-pptx==$PipPptx","openpyxl==$PipXl","Pillow==$PipPil")
-    foreach($s in $pkgs){
-        $n=($s -split '==')[0] -replace '-','_'
-        if(!$NoCache -and (ls "$wheels\${n}*.whl" -EA SilentlyContinue)){wC "Hit: $s";continue}
-        wI "  Download: $s"; &$PythonExe -m pip download -d $wheels $s 2>&1|%{Write-Host "         $_" -F DarkGray}
+    $topPkgs = @("fastmcp","python-docx","python-pptx","openpyxl","Pillow","setuptools","wheel")
+    foreach ($n in $topPkgs) {
+        if (ls "$wheels\${n}*.whl" -EA SilentlyContinue) { continue }
+        wI "    Downloading: $n"
+        & $PythonExe -m pip download -d "$wheels" "$n" 2>&1 | ForEach-Object {
+            if ($_ -match "Downloading|Saved|Collecting") { Write-Host "         $_" -ForegroundColor DarkGray }
+        }
     }
-    foreach($p in @("wordmcp","pptmcp","excelmcp")){
-        wI "  Transitive deps: $p"
-        &$PythonExe -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1 | Out-Null
+    # Download transitive deps from each sub-package
+    foreach ($p in @("wordmcp","pptmcp","excelmcp")) {
+        wI "    Resolving: $p deps"
+        # Try local first, then network
+        & $PythonExe -m pip download --no-index --find-links "$wheels" -d "$wheels" "$odir\$p" 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            &$PythonExe -m pip download -d $wheels "$odir\$p" 2>&1|%{Write-Host "         $_" -F DarkGray}
+            & $PythonExe -m pip download -d "$wheels" "$odir\$p" 2>&1 | ForEach-Object {
+                if ($_ -match "Downloading|Saved|Collecting") { Write-Host "         $_" -ForegroundColor DarkGray }
+            }
         }
     }
 }
@@ -170,7 +189,7 @@ wOK "Python deps: $wc wheels ($ws MB)"
 }
 
 # ---- 6. Launchers ----
-wS "6/8 Creating launchers..."
+$step++; wS "$step/$totalSteps Creating launchers..."
 $bin=Join-Path $BundleDir "bin"
 if(!$SkipPdf){
 @'
@@ -200,8 +219,9 @@ if(!$SkipOffice){
 @echo off
 setlocal
 set "BD=%~dp0.."
-set "PY=%BD%\deps\runtimes\python\python.exe"
-if exist "%PY%" (set "PATH=%BD%\deps\runtimes\python;%BD%\deps\runtimes\python\Scripts;%PATH%" & "%PY%" -m ${t}.server %*) else (python -m ${t}.server %*)
+set "PY=%BD%\python\python.exe"
+set "PYTHONPATH=%BD%\tools\mcp-office\shared\src;%BD%\tools\mcp-office\wordmcp\src;%BD%\tools\mcp-office\pptmcp\src;%BD%\tools\mcp-office\excelmcp\src;%PYTHONPATH%"
+if exist "%PY%" ( "%PY%" -m ${t}.server %* ) else ( python -m ${t}.server %* )
 endlocal
 "@ | Set-Content "$bin\${t}.cmd" -Encoding ASCII
   }
@@ -209,7 +229,7 @@ endlocal
 wOK "Launchers created"
 
 # ---- 7. Config files ----
-wS "7/8 Generating MCP config files..."
+$step++; wS "$step/$totalSteps Generating MCP config files..."
 $cfg=Join-Path $BundleDir "config"; $IB='%LOCALAPPDATA%\MCP-Tools'
 
 if(!$SkipPdf){
@@ -241,10 +261,8 @@ if(!$SkipOffice){
 wOK "Config files generated"
 
 # ---- 8. Runtimes ----
-$total = 7; if(!$SkipNodejs){$total++}; if(!$SkipPython -and !$SkipOffice){$total++}
-$step = 8
 if(!$SkipNodejs){
-  wS "$step/$total Downloading Node.js portable..."
+  $step++; wS "$step/$totalSteps Downloading Node.js portable..."
   $nz=_cacheFile "node-v${NodeVersion}-win-x64.zip" "https://nodejs.org/dist/v${NodeVersion}/node-v${NodeVersion}-win-x64.zip"
   wI "Extracting..."; $ne=Join-Path $OutputDir "_ne"; rm $ne -Recurse -Force -EA SilentlyContinue
   Expand-Archive $nz -Dest $ne -Force
@@ -254,36 +272,17 @@ if(!$SkipNodejs){
   if ($LASTEXITCODE -ge 8) { cp "$ns\*" $nd -Recurse -Force -EA SilentlyContinue }
   rm $ne -Recurse -Force
   $sz=[math]::Round(((ls $nd -Recurse|Measure-Object Length -Sum).Sum)/1MB,1)
-  wOK "Node.js v$NodeVersion bundled ($sz MB)"; $step++
+  wOK "Node.js v$NodeVersion bundled ($sz MB)"
 }
 
 if(!$SkipPython -and !$SkipOffice){
-  wS "$step/$total Downloading Python embedded..."
-  $pz=_cacheFile "python-${PythonVersion}-embed-amd64.zip" "https://www.python.org/ftp/python/${PythonVersion}/python-${PythonVersion}-embed-amd64.zip"
-  wI "Extracting..."; $pd=Join-Path $BundleDeps "runtimes\python"; mkdir $pd -Force|Out-Null
-  Expand-Archive $pz -Dest $pd -Force
-  $pf=Join-Path $pd "python._pth"
-  if(Test-Path $pf){$c=Get-Content $pf -Raw;$c=$c -replace '#import site','import site';if($c -notmatch 'Lib/site-packages'){$c+="`r`nLib/site-packages`r`n"};Set-Content $pf $c -Encoding ASCII}
-  wI "Installing pip into embedded Python..."
-  $gp=Join-Path $OutputDir "get-pip.py"
-  $pipOk=$false
-  for ($retry=1; $retry -le 3; $retry++) {
-    try {
-      if ($retry -gt 1) { wI "Retry $retry/3..." }
-      Invoke-WebRequest "https://bootstrap.pypa.io/get-pip.py" -OutFile $gp -UseBasicParsing -TimeoutSec 30
-      & "$pd\python.exe" $gp --no-warn-script-location 2>&1 | Out-Null
-      $pipOk=$true; break
-    } catch { if ($retry -ge 3) { wW "pip download failed after 3 retries: $_" } }
-  }
-  if ($pipOk) { wOK "pip installed" } else { wI "Will install deps on target machine" }
-  if(Test-Path "$BundleDeps\pip\*.whl"){
-    wI "Pre-installing Office deps..."; $wh=Join-Path $BundleDeps "pip"; $os=Join-Path $BundleTools "mcp-office"
-    &"$pd\python.exe" -m pip install --no-index --find-links $wh fastmcp python-docx python-pptx openpyxl Pillow 2>&1|%{Write-Host "         $_" -F DarkGray}
-    foreach($p in @("shared","wordmcp","pptmcp","excelmcp")){ $pp=Join-Path $os $p; if(Test-Path $pp){&"$pd\python.exe" -m pip install --no-index --find-links $wh -e $pp 2>&1|Out-Null} }
-    wOK "Office deps pre-installed"
-  }
-  $sz=[math]::Round(((ls $pd -Recurse|Measure-Object Length -Sum).Sum)/1MB,1)
-  wOK "Python v$PythonVersion bundled ($sz MB)"; $step++
+  $step++; wS "$step/$totalSteps Downloading Python installer..."
+  # Download full Python installer (not embedded) for reliable offline install
+  $pyInstaller = "python-${PythonVersion}-amd64.exe"
+  $pyInstallerPath = _cacheFile $pyInstaller "https://www.python.org/ftp/python/${PythonVersion}/${pyInstaller}"
+  cp $pyInstallerPath "$BundleDeps\runtimes\" -Force
+  $sz=[math]::Round((Get-Item $pyInstallerPath).Length/1MB,1)
+  wOK "Python v$PythonVersion installer bundled ($sz MB)"
 }
 
 # ---- 9. Copy install scripts & docs ----

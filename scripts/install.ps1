@@ -104,8 +104,8 @@ else {
 $PythonExe = $null
 $PythonSource = ""
 $PythonReq = "3.11"
-$BundledPyDir = "$DepsRuntimes\python"
-$BundledPyExe = "$BundledPyDir\python.exe"
+$BundledPyInstaller = "$DepsRuntimes\python-3.11.9-amd64.exe"
+$PyInstallDir = "$TargetPath\python"
 
 if ($HasOfficeTools) {
     $SysPy = (Get-Command python -ErrorAction SilentlyContinue).Source
@@ -122,19 +122,24 @@ if ($HasOfficeTools) {
         $PythonExe = $SysPy; $PythonSource = "system"
         Write-OK "System Python meets requirement (>= $PythonReq)"
     }
-    elseif (Test-Path $BundledPyExe) {
-        Copy-Item -Recurse $BundledPyDir "$TargetPath\deps\runtimes\python" -Force
-        $PythonExe = "$TargetPath\deps\runtimes\python\python.exe"
-        $PythonSource = "bundled"
-        $info = if ($SysPy) { "system too old" } else { "no system Python" }
-        Write-OK "Using bundled Python ($info)"
+    elseif (Test-Path $BundledPyInstaller) {
+        Write-Info "Installing Python $PythonReq to $PyInstallDir (silent, no admin)..."
+        $installArgs = @("/quiet", "InstallAllUsers=0", "PrependPath=0", "Include_test=0", "Include_tcltk=0", "TargetDir=$PyInstallDir")
+        $proc = Start-Process -FilePath $BundledPyInstaller -ArgumentList $installArgs -Wait -PassThru -NoNewWindow
+        if ($proc.ExitCode -eq 0 -and (Test-Path "$PyInstallDir\python.exe")) {
+            $PythonExe = "$PyInstallDir\python.exe"; $PythonSource = "bundled"
+            Write-OK "Python installed to $PyInstallDir"
+        } else {
+            Write-Warn "Python install failed (exit: $($proc.ExitCode)). Office tools will be skipped."
+            $HasOfficeTools = $false
+        }
     }
     elseif ($SysPy) {
         $PythonExe = $SysPy; $PythonSource = "system(outdated)"
         Write-Warn "System Python below $PythonReq; Office tools may not work"
     }
     else {
-        Write-Warn "Python >= $PythonReq not found and no bundled runtime"
+        Write-Warn "Python >= $PythonReq not found and no bundled installer"
         Write-Warn "Office tools (Word/PPT/Excel) will be skipped"
         $HasOfficeTools = $false
     }
@@ -166,6 +171,16 @@ foreach ($item in @("bin", "config", "docs")) {
     }
 }
 
+# Ensure pdf-toolkit has its node_modules (ESM can't use NODE_PATH)
+$toolkitNM = "$TargetPath\tools\pdf-toolkit-mcp\node_modules"
+$sharedNM = "$TargetPath\deps\npm\node_modules"
+if ((Test-Path $sharedNM) -and -not (Test-Path "$toolkitNM\@modelcontextprotocol")) {
+    Write-Info "Linking pdf-toolkit node_modules..."
+    New-Item -ItemType Directory -Path $toolkitNM -Force | Out-Null
+    Copy-Item -Recurse "$sharedNM\*" $toolkitNM -Force
+    Write-OK "pdf-toolkit node_modules linked from deps/npm"
+}
+
 Write-OK "All files installed"
 
 # ---- 5. Install Python deps (from deps/pip/) ----
@@ -175,33 +190,12 @@ if ($HasOfficeTools -and $PythonExe) {
     $WheelsDir = "$TargetPath\deps\pip"
     $OfficeSrc = "$TargetPath\tools\mcp-office"
 
-    Write-Info "Installing Python deps from local wheels..."
-    & $PythonExe -m pip install --no-index --find-links "$WheelsDir" fastmcp python-docx python-pptx openpyxl Pillow 2>&1 | ForEach-Object {
-        if ($_ -isnot [System.Management.Automation.ErrorRecord]) { Write-Host "         $_" -ForegroundColor DarkGray }
-    }
-
-    Write-Info "Installing mcp-office packages..."
-    foreach ($pkg in @("shared", "wordmcp", "pptmcp", "excelmcp")) {
-        $pkgPath = "$OfficeSrc\$pkg"
-        if (Test-Path $pkgPath) {
-            & $PythonExe -m pip install --no-index --find-links "$WheelsDir" -e "$pkgPath" 2>&1 | ForEach-Object {
-                if ($_ -isnot [System.Management.Automation.ErrorRecord]) { Write-Host "         $_" -ForegroundColor DarkGray }
-            }
-        }
-    }
-    Write-OK "Office tools installed"
-
-    # Verify
-    Write-Info "Verifying Office MCP tools..."
-    foreach ($tool in @("wordmcp", "pptmcp", "excelmcp")) {
-        Write-Host "  $tool ... " -NoNewline
-        $err = & $PythonExe -c "import ${tool}.server" 2>&1
-        if ($LASTEXITCODE -eq 0) { Write-Host "OK" -ForegroundColor Green }
-        else {
-            Write-Host "WARN" -ForegroundColor Yellow
-            if ($err) { Write-Host "         $err" -ForegroundColor DarkGray }
-        }
-    }
+    Write-Info "Installing Office runtime deps from local wheels..."
+    # Only install runtime deps (fastmcp, etc.) — no pip install -e needed
+    # because the launcher sets PYTHONPATH to the tools source directory
+    $pipOut = & $PythonExe -m pip install --no-index --find-links "$WheelsDir" fastmcp python-docx python-pptx openpyxl Pillow 2>&1
+    if ($pipOut) { $pipOut | ForEach-Object { Write-Host "         $_" -ForegroundColor DarkGray } }
+    Write-OK "Office runtime deps installed (PYTHONPATH mode)"
 }
 else { Write-Step "4/6 Skipping Office tools (not available)" }
 

@@ -321,6 +321,7 @@ done
 TOOLKIT_DIR="$BUNDLE_TOOLS/pdf-toolkit-mcp"
 mkdir -p "$TOOLKIT_DIR"
 cp -r dist "$TOOLKIT_DIR/"
+cp -r node_modules "$TOOLKIT_DIR/"
 cp package.json "$TOOLKIT_DIR/"
 
 # 将 pdf-toolkit-mcp 的额外依赖合并到共享 node_modules
@@ -397,35 +398,21 @@ if ! $SKIP_OFFICE; then
     log_ok "所有 wheel 从缓存解析完成（无需联网）"
   else
     log_info "  部分 wheel 缺失，从网络下载..."
-
-    # 固定版本的 pip 依赖列表
-    PIP_PACKAGES=(
-      "fastmcp==$PIP_FASTMCP_VERSION"
-      "python-docx==$PIP_PYDOCX_VERSION"
-      "python-pptx==$PIP_PYPPTX_VERSION"
-      "openpyxl==$PIP_OPENPYXL_VERSION"
-      "Pillow==$PIP_PILLOW_VERSION"
-    )
-
-    for pkg_spec in "${PIP_PACKAGES[@]}"; do
-      pkg_name=$(echo "$pkg_spec" | cut -d'=' -f1 | tr '[:upper:]' '[:lower:]')
-      pkg_name="${pkg_name//-/_}"
-      if ! $NO_CACHE && ls "$WHEELS_DIR"/${pkg_name}*.whl 2>/dev/null | head -1 | grep -q .; then
-        log_cache "命中: $pkg_spec"
-        continue
-      fi
-      log_info "  下载: $pkg_spec"
-      $PYTHON_EXE -m pip download -d "$WHEELS_DIR" "$pkg_spec" 2>&1 | while IFS= read -r line; do
+    # Download only known top-level deps (much faster than full venv)
+    for pkg in fastmcp python-docx python-pptx openpyxl Pillow setuptools wheel; do
+      ls "$WHEELS_DIR"/${pkg}*.whl 2>/dev/null | head -1 | grep -q . && continue
+      log_info "    下载: $pkg"
+      $PYTHON_EXE -m pip download -d "$WHEELS_DIR" "$pkg" 2>&1 | while IFS= read -r line; do
         echo "         $line"
       done
     done
-
+    # Download transitive deps from each sub-package
     for pkg_dir in wordmcp pptmcp excelmcp; do
-      # 先尝试本地
+      # Try local first
       $PYTHON_EXE -m pip download --no-index --find-links "$WHEELS_DIR" \
         -d "$WHEELS_DIR" "$WORK_DIR/mcp-office/$pkg_dir" 2>&1 | tail -1
       if [ ${PIPESTATUS[0]} -ne 0 ]; then
-        log_info "  下载 $pkg_dir 传递依赖..."
+        log_info "    解析 $pkg_dir 传递依赖..."
         $PYTHON_EXE -m pip download -d "$WHEELS_DIR" \
           "$WORK_DIR/mcp-office/$pkg_dir" 2>&1 | while IFS= read -r line; do
           echo "         $line"

@@ -153,26 +153,16 @@ if $HAS_OFFICE && [ -n "$PYTHON_EXE" ]; then
   WHEELS_DIR="$TARGET_PATH/deps/pip"
   OFFICE_SRC="$TARGET_PATH/tools/mcp-office"
 
-  log_info "Installing Python deps from local wheels..."
+  log_info "Installing Office runtime deps from local wheels..."
+  # Only runtime deps — PYTHONPATH handles imports (no pip install -e needed)
   $PYTHON_EXE -m pip install --no-index --find-links "$WHEELS_DIR" fastmcp python-docx python-pptx openpyxl Pillow 2>&1 | tail -5
-
-  log_info "Installing mcp-office packages..."
-  for pkg in shared wordmcp pptmcp excelmcp; do
-    [ -d "$OFFICE_SRC/$pkg" ] || continue
-    $PYTHON_EXE -m pip install --no-index --find-links "$WHEELS_DIR" -e "$OFFICE_SRC/$pkg" 2>&1 | tail -1
-  done
-  log_ok "Office tools installed"
+  log_ok "Office runtime deps installed (PYTHONPATH mode)"
 
   log_info "Verifying..."
   for tool in wordmcp pptmcp excelmcp; do
     printf "  %-18s ... " "$tool"
-    err=$($PYTHON_EXE -c "import ${tool}.server" 2>&1)
-    if [ $? -eq 0 ]; then
-      echo -e "${GREEN}OK${NC}"
-    else
-      echo -e "${YELLOW}WARN${NC}"
-      [ -n "$err" ] && echo -e "         ${err}" | head -3
-    fi
+    err=$(PYTHONPATH="$OFFICE_SRC/shared/src:$OFFICE_SRC/wordmcp/src:$OFFICE_SRC/pptmcp/src:$OFFICE_SRC/excelmcp/src" $PYTHON_EXE -c "import ${tool}.server" 2>&1)
+    if [ $? -eq 0 ]; then echo -e "${GREEN}OK${NC}"; else echo -e "${YELLOW}WARN${NC}"; [ -n "$err" ] && echo -e "         ${err}" | head -3; fi
   done
 else
   log_step "4/6 Skipping Office tools"
