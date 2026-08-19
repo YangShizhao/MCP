@@ -12,16 +12,20 @@
     Auto-configure Claude Code MCP settings (default: $true)
 .PARAMETER ConfigureCline
     Auto-configure Cline (VSCode) MCP settings (default: $true)
+.PARAMETER ConfigureCodex
+    Auto-configure Codex CLI MCP settings in ~/.codex/config.toml (default: $true)
 .EXAMPLE
     .\install.ps1
     .\install.ps1 -TargetPath "D:\Tools\MCP"
+    .\install.ps1 -ConfigureCodex $false
 #>
 
 param(
     [string]$TargetPath = "$env:LOCALAPPDATA\MCP-Tools",
     [bool]$AddToPath = $true,
     [bool]$ConfigureClaudeCode = $true,
-    [bool]$ConfigureCline = $true
+    [bool]$ConfigureCline = $true,
+    [bool]$ConfigureCodex = $true
 )
 
 $ErrorActionPreference = "Continue"
@@ -340,6 +344,67 @@ if ($ConfigureCline -and (Test-Path "$env:APPDATA\Code\User")) {
     $s | ConvertTo-Json -Depth 5 | Set-Content $sfile
     if ($newC -gt 0) { Write-OK "Cline: +$newC tool(s) -> $sfile" }
         else { Write-Info "Cline config already up to date" }
+    }
+}
+
+# ---- Codex CLI (TOML config) ----
+if ($ConfigureCodex) {
+    $codexDir = "$env:USERPROFILE\.codex"
+    $codexFile = "$codexDir\config.toml"
+
+    # Build the list of servers to add
+    $codexServers = @()
+    if ($HasPdfTools) {
+        $codexServers += @{ name = "pdf-reader"; cmd = "$TargetPath\bin\pdf-reader.cmd"; env = @{} }
+        $codexServers += @{ name = "pdf-toolkit"; cmd = "$TargetPath\bin\pdf-toolkit.cmd"; env = @{} }
+    }
+    if ($HasOfficeTools -and $PythonExe) {
+        $docs = "C:\Users\$env:USERNAME\Documents"
+        $codexServers += @{ name = "word";  cmd = "$TargetPath\bin\wordmcp.cmd";  env = @{ WORD_ALLOWLIST_ROOTS = $docs;  WORD_ENABLE_WRITE = "true" } }
+        $codexServers += @{ name = "ppt";   cmd = "$TargetPath\bin\pptmcp.cmd";   env = @{ PPT_ALLOWLIST_ROOTS = $docs;   PPT_ENABLE_WRITE = "true" } }
+        $codexServers += @{ name = "excel"; cmd = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $docs; EXCEL_ENABLE_WRITE = "true" } }
+    }
+
+    if ($codexServers.Count -eq 0) {
+        Write-Info "No tools available for Codex config"
+    } else {
+        if (-not (Test-Path $codexDir)) { New-Item -ItemType Directory -Path $codexDir -Force | Out-Null }
+
+        $existingToml = ""
+        if (Test-Path $codexFile) { $existingToml = Get-Content $codexFile -Raw }
+
+        # Build TOML blocks only for servers not already present
+        $newBlocks = @()
+        $newCodexCount = 0
+        foreach ($srv in $codexServers) {
+            $header = "[mcp_servers.$($srv.name)]"
+            if ($existingToml -match [regex]::Escape($header)) { continue }
+            # TOML: escape backslashes in Windows paths
+            $escCmd = $srv.cmd -replace '\\', '\\'
+            $block = "$header`ncommand = `"$escCmd`""
+            if ($srv.env.Count -gt 0) {
+                $envPairs = @()
+                foreach ($k in $srv.env.Keys) {
+                    $escVal = $srv.env[$k] -replace '\\', '\\'
+                    $envPairs += "$k = `"$escVal`""
+                }
+                $block += "`nenv = { $($envPairs -join ', ') }"
+            }
+            $newBlocks += $block
+            $newCodexCount++
+        }
+
+        if ($newCodexCount -gt 0) {
+            $appendText = ""
+            if ($existingToml -and -not $existingToml.EndsWith("`n")) { $appendText += "`n" }
+            $appendText += "`n# --- MCP Tools (added by install.ps1) ---`n"
+            $appendText += ($newBlocks -join "`n`n")
+            $appendText += "`n"
+            Add-Content -Path $codexFile -Value $appendText -Encoding UTF8
+            Write-OK "Codex: +$newCodexCount tool(s) -> $codexFile"
+        } else {
+            Write-Info "Codex config already up to date"
+        }
     }
 }
 

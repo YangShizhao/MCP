@@ -11,6 +11,7 @@ TARGET_PATH="$HOME/mcp-tools"
 CONFIGURE_PATH=true
 CONFIGURE_CLAUDE=true
 CONFIGURE_CLINE=true
+CONFIGURE_CODEX=true
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; MAGENTA='\033[0;35m'; NC='\033[0m'
 log_info()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
@@ -25,7 +26,8 @@ while [[ $# -gt 0 ]]; do
     --no-path) CONFIGURE_PATH=false; shift ;;
     --no-claude) CONFIGURE_CLAUDE=false; shift ;;
     --no-cline) CONFIGURE_CLINE=false; shift ;;
-    --help|-h) echo "Usage: bash install.sh [options]"; echo "  --target <path>  Install path (default: $HOME/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; exit 0 ;;
+    --no-codex) CONFIGURE_CODEX=false; shift ;;
+    --help|-h) echo "Usage: bash install.sh [options]"; echo "  --target <path>  Install path (default: $HOME/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; echo "  --no-cline       Skip Cline config"; echo "  --no-codex       Skip Codex config"; exit 0 ;;
     *) log_error "Unknown: $1"; exit 1 ;;
   esac
 done
@@ -209,6 +211,53 @@ with open('$CCFG', 'w') as f: json.dump(cfg, f, indent=2); f.write('\n')
 " 2>/dev/null
   fi
   log_ok "Claude Code config: $CCFG"
+fi
+
+# ---- Codex CLI (TOML config) ----
+if $CONFIGURE_CODEX; then
+  CODEX_DIR="$HOME/.codex"
+  CODEX_FILE="$CODEX_DIR/config.toml"
+  mkdir -p "$CODEX_DIR"
+
+  EXISTING=""
+  [ -f "$CODEX_FILE" ] && EXISTING=$(cat "$CODEX_FILE")
+
+  NEW_BLOCKS=""
+  NEW_COUNT=0
+
+  add_codex_server() {
+    local name="$1" cmd="$2" envline="$3"
+    if echo "$EXISTING" | grep -q "\[mcp_servers\.$name\]"; then return; fi
+    NEW_BLOCKS="${NEW_BLOCKS}
+[mcp_servers.$name]
+command = \"$cmd\""
+    [ -n "$envline" ] && NEW_BLOCKS="${NEW_BLOCKS}
+env = { $envline }"
+    NEW_BLOCKS="${NEW_BLOCKS}
+"
+    NEW_COUNT=$((NEW_COUNT + 1))
+  }
+
+  if $HAS_PDF; then
+    add_codex_server "pdf-reader"  "$TARGET_PATH/bin/pdf-reader.sh"  ""
+    add_codex_server "pdf-toolkit" "$TARGET_PATH/bin/pdf-toolkit.sh" ""
+  fi
+  if $HAS_OFFICE && [ -n "$PYTHON_EXE" ]; then
+    add_codex_server "word"  "$TARGET_PATH/bin/wordmcp.sh"  "WORD_ALLOWLIST_ROOTS = \"$HOME\", WORD_ENABLE_WRITE = \"true\""
+    add_codex_server "ppt"   "$TARGET_PATH/bin/pptmcp.sh"   "PPT_ALLOWLIST_ROOTS = \"$HOME\", PPT_ENABLE_WRITE = \"true\""
+    add_codex_server "excel" "$TARGET_PATH/bin/excelmcp.sh" "EXCEL_ALLOWLIST_ROOTS = \"$HOME\", EXCEL_ENABLE_WRITE = \"true\""
+  fi
+
+  if [ "$NEW_COUNT" -gt 0 ]; then
+    {
+      echo ""
+      echo "# --- MCP Tools (added by install.sh) ---"
+      echo "$NEW_BLOCKS"
+    } >> "$CODEX_FILE"
+    log_ok "Codex: +$NEW_COUNT tool(s) -> $CODEX_FILE"
+  else
+    log_info "Codex config already up to date"
+  fi
 fi
 
 # ---- PATH ----
