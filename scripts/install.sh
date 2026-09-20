@@ -12,6 +12,7 @@ CONFIGURE_PATH=true
 CONFIGURE_CLAUDE=true
 CONFIGURE_CLINE=true
 CONFIGURE_CODEX=true
+CONFIGURE_DSH=true
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; MAGENTA='\033[0;35m'; NC='\033[0m'
 log_info()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
@@ -27,7 +28,8 @@ while [[ $# -gt 0 ]]; do
     --no-claude) CONFIGURE_CLAUDE=false; shift ;;
     --no-cline) CONFIGURE_CLINE=false; shift ;;
     --no-codex) CONFIGURE_CODEX=false; shift ;;
-    --help|-h) echo "Usage: bash install.sh [options]"; echo "  --target <path>  Install path (default: $HOME/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; echo "  --no-cline       Skip Cline config"; echo "  --no-codex       Skip Codex config"; exit 0 ;;
+    --no-dsh) CONFIGURE_DSH=false; shift ;;
+    --help|-h) echo "Usage: bash install.sh [options]"; echo "  --target <path>  Install path (default: $HOME/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; echo "  --no-cline       Skip Cline config"; echo "  --no-codex       Skip Codex config"; echo "  --no-dsh         Skip DeepSeek Harness config"; exit 0 ;;
     *) log_error "Unknown: $1"; exit 1 ;;
   esac
 done
@@ -95,17 +97,33 @@ BUNDLED_PY="$BUNDLED_PY_DIR/bin/python3"
 PY_REQ="3.11"
 
 if $HAS_OFFICE; then
-  SYS_PY_OK=false
-  if command -v python3 &>/dev/null; then
-    SYS_PY_VER=$(python3 --version 2>&1 | sed 's/Python //')
-    SYS_PY_M=$(echo "$SYS_PY_VER" | cut -d'.' -f1)
-    SYS_PY_m=$(echo "$SYS_PY_VER" | cut -d'.' -f2)
-    { [ "$SYS_PY_M" -gt 3 ] || { [ "$SYS_PY_M" -eq 3 ] && [ "$SYS_PY_m" -ge 11 ]; }; } && SYS_PY_OK=true
-  fi
+  PY_MINOR_MIN=11
+  py_ok() {  # $1 = 解释器路径/名称，判断版本是否 >= 3.11
+    local v major minor
+    v=$("$1" --version 2>&1 | sed 's/^Python //')
+    major=$(echo "$v" | cut -d'.' -f1)
+    minor=$(echo "$v" | cut -d'.' -f2)
+    case "$major" in ''|*[!0-9]*) return 1 ;; esac
+    case "$minor" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge "$PY_MINOR_MIN" ]; }
+  }
 
-  if $SYS_PY_OK; then
-    PYTHON_EXE="python3"; PYTHON_SOURCE="system"
-    log_ok "System Python $SYS_PY_VER meets requirement (>= $PY_REQ)"
+  # 系统 python3 常常是 3.10 或更低（mcp-office 要求 >= 3.11）：
+  # 依次尝试常见版本化解释器与 conda 环境，最后一个可用的作为兜底。
+  PYTHON_EXE=""; PYTHON_SOURCE=""
+  for cand in python3 python3.13 python3.12 python3.11 \
+              "$HOME/miniforge3/bin/python3" "$HOME/anaconda3/bin/python3" \
+              "$HOME/miniconda3/bin/python3" \
+              /usr/local/bin/python3.12 /usr/local/bin/python3.11 \
+              /opt/conda/bin/python3; do
+    if command -v "$cand" >/dev/null 2>&1 && py_ok "$cand"; then
+      PYTHON_EXE="$cand"; PYTHON_SOURCE="system"
+      break
+    fi
+  done
+
+  if [ -n "$PYTHON_EXE" ]; then
+    log_ok "Python $("$PYTHON_EXE" --version 2>&1 | sed 's/Python //') meets requirement (>= $PY_REQ) [$PYTHON_EXE]"
   elif [ -x "$BUNDLED_PY" ]; then
     sudo mkdir -p "$TARGET_PATH/deps/runtimes"
     sudo cp -r "$BUNDLED_PY_DIR" "$TARGET_PATH/deps/runtimes/"
@@ -113,7 +131,7 @@ if $HAS_OFFICE; then
     log_ok "Using bundled Python"
   elif command -v python3 &>/dev/null; then
     PYTHON_EXE="python3"; PYTHON_SOURCE="system(outdated)"
-    log_warn "System Python below $PY_REQ; Office tools may not work"
+    log_warn "System Python ($(python3 --version 2>&1)) below $PY_REQ; Office tools may not work"
   else
     log_warn "Python >= $PY_REQ not found; Office tools skipped"
     HAS_OFFICE=false
@@ -160,10 +178,12 @@ if $HAS_OFFICE && [ -n "$PYTHON_EXE" ]; then
   $PYTHON_EXE -m pip install --no-index --find-links "$WHEELS_DIR" fastmcp python-docx python-pptx openpyxl Pillow 2>&1 | tail -5
   log_ok "Office runtime deps installed (PYTHONPATH mode)"
 
-  log_info "Verifying..."
+  PYTHONPATH="$OFFICE_SRC/shared/src:$OFFICE_SRC/wordmcp/src:$OFFICE_SRC/pptmcp/src:$OFFICE_SRC/excelmcp/src"
+  export PYTHONPATH
+  log_info "Verifying (首次导入 fastmcp 可能需要十几秒)..."
   for tool in wordmcp pptmcp excelmcp; do
     printf "  %-18s ... " "$tool"
-    err=$(PYTHONPATH="$OFFICE_SRC/shared/src:$OFFICE_SRC/wordmcp/src:$OFFICE_SRC/pptmcp/src:$OFFICE_SRC/excelmcp/src" $PYTHON_EXE -c "import ${tool}.server" 2>&1)
+    err=$($PYTHON_EXE -c "import ${tool}.server" 2>&1)
     if [ $? -eq 0 ]; then echo -e "${GREEN}OK${NC}"; else echo -e "${YELLOW}WARN${NC}"; [ -n "$err" ] && echo -e "         ${err}" | head -3; fi
   done
 else
@@ -257,6 +277,108 @@ env = { $envline }"
     log_ok "Codex: +$NEW_COUNT tool(s) -> $CODEX_FILE"
   else
     log_info "Codex config already up to date"
+  fi
+fi
+
+# ---- DeepSeek Harness (YAML loader patch) ----
+# dsh keeps one home-level patch layer at $DSH_HOME/cordis.patch.yml that is
+# applied over EVERY profile (web / headless / sdk / acp / custom). Each MCP
+# server is one insert row naming the '@deepseek-ai/dsh-mcp-client' plugin, and
+# its tools then appear as mcp__<serverName>__<tool>.
+if $CONFIGURE_DSH; then
+  DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
+  DSH_PATCH="$DSH_HOME_DIR/cordis.patch.yml"
+  mkdir -p "$DSH_HOME_DIR" 2>/dev/null || true
+  [ -f "$DSH_PATCH" ] && cp "$DSH_PATCH" "$DSH_PATCH.bak" 2>/dev/null || true
+
+  DSH_ADDED=$(DSH_PATCH="$DSH_PATCH" TARGET_PATH="$TARGET_PATH" HOME_DIR="$HOME" \
+    HAS_PDF="$HAS_PDF" HAS_OFFICE="$HAS_OFFICE" OFFICE_OK="$( [ -n "$PYTHON_EXE" ] && echo true || echo false )" \
+    python3 - <<'DSHPY'
+import os, re, sys
+
+patch = os.environ["DSH_PATCH"]
+target = os.environ["TARGET_PATH"]
+home = os.environ["HOME_DIR"]
+has_pdf = os.environ["HAS_PDF"] == "true"
+has_office = os.environ["HAS_OFFICE"] == "true" and os.environ["OFFICE_OK"] == "true"
+
+SERVERS = []
+if has_pdf:
+    SERVERS += [
+        ("pdf-reader", "PDF read, search, extract, render", {}),
+        ("pdf-toolkit", "PDF create, edit, merge, split, forms, encrypt", {}),
+    ]
+if has_office:
+    SERVERS += [
+        ("word", "Word docs - 51 tools",
+         {"WORD_ALLOWLIST_ROOTS": home, "WORD_ENABLE_WRITE": "true"}),
+        ("ppt", "PowerPoint - 48 tools",
+         {"PPT_ALLOWLIST_ROOTS": home, "PPT_ENABLE_WRITE": "true"}),
+        ("excel", "Excel - 65 tools",
+         {"EXCEL_ALLOWLIST_ROOTS": home, "EXCEL_ENABLE_WRITE": "true"}),
+    ]
+
+try:
+    with open(patch, encoding="utf-8") as f:
+        text = f.read()
+except FileNotFoundError:
+    text = ""
+
+if not text.strip():
+    text = "# DeepSeek Harness user patch layer ($DSH_HOME/cordis.patch.yml).\n# Applies to every dsh profile; MCP rows below are maintained by MCP Tools install.sh.\n"
+
+# A generated template may leave the empty-root placeholder behind; drop it
+# before inserting rows, otherwise the document would hold two root nodes.
+text = re.sub(r"(?m)^\s*\[\s*\]\s*$\n?", "", text)
+
+def block(name, desc, env, indent="    "):
+    cmd = "%s/bin/%s.sh" % (target, {
+        "pdf-reader": "pdf-reader", "pdf-toolkit": "pdf-toolkit",
+        "word": "wordmcp", "ppt": "pptmcp", "excel": "excelmcp"}[name])
+    lines = [
+        "%s- id: mcp-%s" % (indent, name),
+        "%s  name: '@deepseek-ai/dsh-mcp-client'" % indent,
+        "%s  config:" % indent,
+        "%s    serverName: %s" % (indent, name),
+        "%s    transport: stdio" % indent,
+        "%s    command: %s" % (indent, cmd),
+    ]
+    if env:
+        lines.append("%s    env:" % indent)
+        for key, value in env.items():
+            lines.append('%s      %s: "%s"' % (indent, key, value))
+    lines.append("%s    # %s" % (indent, desc))
+    return "\n".join(lines) + "\n"
+
+added = []
+for name, desc, env in SERVERS:
+    if re.search(r"(?m)^\s*-\s*id:\s*mcp-%s\s*$" % re.escape(name), text):
+        continue
+    added.append(block(name, desc, env))
+
+if not added:
+    print(0)
+    sys.exit(0)
+
+tail = "# --- MCP Tools (added by install.sh) ---\n- insert:\n" + "".join(added)
+if not text.endswith("\n"):
+    text += "\n"
+text += tail
+
+with open(patch, "w", encoding="utf-8") as f:
+    f.write(text)
+
+print(len(added))
+DSHPY
+  ) || DSH_ADDED=""
+
+  if [ "${DSH_ADDED:-0}" = "0" ] && [ -f "$DSH_PATCH" ]; then
+    log_info "DeepSeek Harness config already up to date"
+  elif [ -n "${DSH_ADDED:-}" ]; then
+    log_ok "DeepSeek Harness: +$DSH_ADDED tool(s) -> $DSH_PATCH"
+    log_info "Tools appear as mcp__<name>__<tool> after the next dsh start"
+  else
+    log_warn "DeepSeek Harness: python3 unavailable, config skipped"
   fi
 fi
 

@@ -125,6 +125,28 @@ claude mcp add pdf-toolkit -- npx @beepboop2025/pdf-toolkit-mcp
 
 配置格式同上，参考各工具的 MCP 配置文档。
 
+### DeepSeek Harness (dsh)
+
+dsh 的 MCP 服务器写在 `$DSH_HOME/cordis.patch.yml`（默认 `~/.dsh/cordis.patch.yml`，
+Windows 为 `%USERPROFILE%\.dsh\cordis.patch.yml`）。该文件是 YAML 加载器补丁层，
+对**所有** dsh profile（web / headless / sdk / acp）生效；若其中只有默认的空根占位符
+`[]`，请先删除该行。重启 dsh 后工具以 `mcp__pdf-toolkit__<tool>` 的名称出现。
+
+```yaml
+- insert:
+    - id: mcp-pdf-toolkit
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pdf-toolkit
+        transport: stdio
+        command: npx
+        args:
+          - '@beepboop2025/pdf-toolkit-mcp'
+```
+
+完整模板见 [`config/dsh.yml`](config/dsh.yml)；离线安装包的 `install.sh` / `install.ps1`
+会自动写入该配置（并改用打包的 `bin/pdf-toolkit.cmd` / `bin/pdf-toolkit.sh` 启动器）。
+
 ## 使用示例
 
 ### 合并 PDF

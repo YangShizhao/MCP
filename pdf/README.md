@@ -53,3 +53,18 @@
 claude mcp add pdf-reader -- npx @sylphx/pdf-reader-mcp
 claude mcp add pdf-toolkit -- npx @beepboop2025/pdf-toolkit-mcp
 ```
+
+### DeepSeek Harness (dsh)
+
+将 `config/dsh.yml` 中的 `- insert:` 整段追加到 `~/.dsh/cordis.patch.yml`
+（Windows：`%USERPROFILE%\.dsh\cordis.patch.yml`，若文件里只有空根占位符 `[]` 请先删除该行）。
+该文件是 dsh 的 YAML 加载器补丁层，对所有 profile 生效；重启 dsh 后工具以
+`mcp__pdf-reader__<tool>` / `mcp__pdf-toolkit__<tool>` 出现。
+
+```bash
+# 离线安装包会自动完成上述配置
+bash install.sh          # Linux / Mac
+.\install.ps1            # Windows
+```
+
+其他 AI 工具（Cline、Codex、Continue、Claude Desktop）的模板见各自 `config/` 目录。

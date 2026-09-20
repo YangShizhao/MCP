@@ -86,6 +86,28 @@ claude mcp add pdf-reader -- npx @sylphx/pdf-reader-mcp
 
 在 `config.json` 的 `mcpServers` 段中添加相同配置。
 
+### DeepSeek Harness (dsh)
+
+dsh 的 MCP 服务器写在 `$DSH_HOME/cordis.patch.yml`（默认 `~/.dsh/cordis.patch.yml`，
+Windows 为 `%USERPROFILE%\.dsh\cordis.patch.yml`）。该文件是 YAML 加载器补丁层，
+对**所有** dsh profile（web / headless / sdk / acp）生效；若其中只有默认的空根占位符
+`[]`，请先删除该行。重启 dsh 后工具以 `mcp__pdf-reader__<tool>` 的名称出现。
+
+```yaml
+- insert:
+    - id: mcp-pdf-reader
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pdf-reader
+        transport: stdio
+        command: npx
+        args:
+          - '@sylphx/pdf-reader-mcp'
+```
+
+完整模板见 [`config/dsh.yml`](config/dsh.yml)；离线安装包的 `install.sh` / `install.ps1`
+会自动写入该配置（并改用打包的 `bin/pdf-reader.cmd` / `bin/pdf-reader.sh` 启动器）。
+
 ## 使用示例
 
 ### 基本读取

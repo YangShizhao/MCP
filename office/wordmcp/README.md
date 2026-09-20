@@ -92,6 +92,31 @@ pip install -e ./wordmcp
 }
 ```
 
+### DeepSeek Harness (dsh)
+
+dsh 不读取 `mcpServers` JSON，而是从 `~/.dsh/cordis.patch.yml`（Windows 为 `%USERPROFILE%\.dsh\cordis.patch.yml`）加载 MCP 服务器：这是一个 YAML 加载器补丁层，对 web/headless/sdk/acp 等所有 profile 生效。重启 dsh 后工具以 `mcp__<serverName>__<tool>` 命名，例如 `mcp__word__create_document`。
+
+> 若该文件中只有默认的空根占位符 `[]`，请先删除该行，再插入下面的内容。
+
+```yaml
+- insert:
+    - id: mcp-word
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: word
+        transport: stdio
+        command: python
+        args:
+          - '-m'
+          - wordmcp.server
+        env:
+          WORD_ALLOWLIST_ROOTS: '/home'
+          WORD_ENABLE_WRITE: 'true'
+        # Word 文档处理 MCP — 51 个工具覆盖文档创建、模板组装、修订跟踪、结构 QA
+```
+
+请按需修改 `WORD_ALLOWLIST_ROOTS` 等环境变量。离线安装包中的 `scripts/install.sh` / `scripts/install.ps1` 会自动写入该配置（幂等，不会覆盖已有行），完整模板见 `config/dsh.yml`。
+
 ### 环境变量
 
 | 变量 | 说明 | 默认值 |

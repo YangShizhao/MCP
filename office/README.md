@@ -38,7 +38,7 @@
 ## 架构
 
 ```
-AI 工具 (Claude/Cline/Codex)
+AI 工具 (Claude/Cline/Codex/DeepSeek Harness)
     │  MCP stdio 协议
     ↓
 mcp-office 服务器 (本地 Python 进程)
@@ -70,6 +70,29 @@ claude mcp add excel -- python -m excelmcp.server
 ```
 
 > **注意：** 需要先在本地安装 mcp-office。详见各工具目录或使用离线安装包。
+
+### DeepSeek Harness (dsh)
+
+将各工具 `config/dsh.yml` 中的 `- insert:` 整段追加到 `~/.dsh/cordis.patch.yml`
+（Windows：`%USERPROFILE%\.dsh\cordis.patch.yml`，若文件里只有空根占位符 `[]` 请先删除该行）。
+该文件是 dsh 的 YAML 加载器补丁层，对所有 profile 生效；重启 dsh 后工具以
+`mcp__word__<tool>` / `mcp__ppt__<tool>` / `mcp__excel__<tool>` 出现。
+
+```yaml
+- insert:
+    - id: mcp-word
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: word
+        transport: stdio
+        command: python
+        args: ['-m', wordmcp.server]
+        env:
+          WORD_ALLOWLIST_ROOTS: '/home'
+          WORD_ENABLE_WRITE: 'true'
+```
+
+离线安装包的 `install.sh` / `install.ps1` 会自动写入这三个 Office 服务器配置。
 
 ## 离线安装
 

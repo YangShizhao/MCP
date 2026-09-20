@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-这是一个 **MCP (Model Context Protocol) 工具库**，集成了多种适用于不同 AI 工具（Claude Code、Cline、Codex、Continue 等）的 MCP 服务器。项目采用 **包装引用** 方式集成开源 MCP 工具，通过配置模板和文档帮助使用者快速在不同 AI 工具中启用这些 MCP 服务。
+这是一个 **MCP (Model Context Protocol) 工具库**，集成了多种适用于不同 AI 工具（Claude Code、Cline、Codex、Continue、DeepSeek Harness 等）的 MCP 服务器。项目采用 **包装引用** 方式集成开源 MCP 工具，通过配置模板和文档帮助使用者快速在不同 AI 工具中启用这些 MCP 服务。
 
 ## 项目架构
 
@@ -39,7 +39,7 @@ MCP/
 
 - **分类目录** — 按功能领域（pdf、image、search 等）组织工具子目录
 - **包装引用** — 不复制源码，通过文档 + 配置模板的方式引用上游开源项目
-- **多工具兼容** — 每个工具目录下的 `config/` 为不同 AI 工具（Claude Code、Cline、Codex、Claude Desktop）提供配置模板
+- **多工具兼容** — 每个工具目录下的 `config/` 为不同 AI 工具（Claude Code、Claude Desktop、Cline、Codex、Continue、DeepSeek Harness）提供配置模板
 - **文档齐全** — 每个工具必须包含 README.md 说明用途、安装方式、工具列表和使用示例
 
 ## 离线打包
@@ -118,9 +118,36 @@ bash scripts/pack.sh --skip-nodejs --skip-python       # 不含运行时
 - `claude-desktop.json` — Claude Desktop
 - `cline.json` — Cline (VSCode 扩展)
 - `codex.json` — OpenAI Codex CLI
+- `dsh.yml` — DeepSeek Harness（YAML，唯一的非 JSON 模板）
+
+### DeepSeek Harness (dsh) 配置说明
+
+dsh 不使用 `mcpServers` 映射，而是在 `$DSH_HOME/cordis.patch.yml`
+（默认 `~/.dsh/cordis.patch.yml`，Windows 为 `%USERPROFILE%\.dsh\cordis.patch.yml`）
+中写 YAML 加载器补丁记录。该用户补丁层会应用到**所有** dsh profile
+（web / headless / sdk / acp / 自定义），每个 MCP 服务器是一条引用
+`@deepseek-ai/dsh-mcp-client` 插件的 `insert` 记录：
+
+```yaml
+- insert:
+    - id: mcp-<name>                 # 补丁行 id，普通安装按 mcp-<serverName> 命名
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: <name>           # 工具命名空间：mcp__<serverName>__<tool>
+        transport: stdio             # 或 streamable-http（需 url/headers）
+        command: <可执行文件>
+        args: [...]
+        env: { ... }                 # 可选
+```
+
+要点：
+- 模板块插入前必须先删除文件里可能存在的空根占位符 `[]`，否则 YAML 会出现两个根节点
+- 已存在的 `- id: mcp-<name>` 行不得覆盖（用户自定义优先）
+- Windows 下 stdio 启动器为 `.cmd`，需写成 `command: cmd` + `args: [/d, /s, /c, '<路径>']`
+- 安装脚本 `scripts/install.sh` / `scripts/install.ps1` 会自动合并该配置
 
 ### 文档撰写约定
 
 - 所有文档使用中文撰写（专有名词除外）
-- 配置模板使用 JSON 格式
+- 配置模板使用 JSON 格式（DeepSeek Harness 例外，使用 YAML `dsh.yml`）
 - MCP 工具名称使用英文原名（如 `pdf_read`、`merge_pdfs`）

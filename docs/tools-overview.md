@@ -13,13 +13,13 @@
 
 ## 兼容性矩阵
 
-| 工具 | Claude Code | Claude Desktop | Cline | Codex | Continue |
-|------|:-----------:|:--------------:|:-----:|:-----:|:--------:|
-| pdf-reader-mcp | ✅ | ✅ | ✅ | ✅ | ✅ |
-| pdf-toolkit-mcp | ✅ | ✅ | ✅ | ✅ | ✅ |
-| wordmcp | ✅ | ✅ | ✅ | ✅ | ✅ |
-| pptmcp | ✅ | ✅ | ✅ | ✅ | ✅ |
-| excelmcp | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 工具 | Claude Code | Claude Desktop | Cline | Codex | Continue | DeepSeek Harness |
+|------|:-----------:|:--------------:|:-----:|:-----:|:--------:|:----------------:|
+| pdf-reader-mcp | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| pdf-toolkit-mcp | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| wordmcp | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| pptmcp | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| excelmcp | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ## 运行时要求
 
@@ -30,7 +30,8 @@
 
 ## 通用 MCP 配置格式
 
-每个工具目录下 `config/` 文件夹包含针对不同 AI 工具的配置模板。本质上 MCP 配置格式是统一的：
+每个工具目录下 `config/` 文件夹包含针对不同 AI 工具的配置模板。除 DeepSeek Harness 外，
+各工具的 MCP 配置格式本质上是一致的：
 
 ```json
 {
@@ -52,6 +53,32 @@
 | Claude Desktop | `claude_desktop_config.json` |
 | Cline | VSCode 设置 `cline.mcpServers` |
 | Codex | `~/.codex/config.toml` 中的 MCP 配置段 |
+| Continue | `config.json` 的 `mcpServers` 段 |
+| DeepSeek Harness | `~/.dsh/cordis.patch.yml`（Windows：`%USERPROFILE%\.dsh\cordis.patch.yml`） |
+
+### DeepSeek Harness 配置格式
+
+DeepSeek Harness（`dsh`）不使用 `mcpServers` 映射，而是在 `$DSH_HOME/cordis.patch.yml`
+（默认 `~/.dsh/cordis.patch.yml`）中写 YAML「加载器补丁」记录。该文件是用户自己的补丁层，
+会应用到**所有** dsh profile（web / headless / sdk / acp / 自定义），每个 MCP 服务器是一条
+引用 `@deepseek-ai/dsh-mcp-client` 插件的 `insert` 记录：
+
+```yaml
+- insert:
+    - id: mcp-pdf-reader
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pdf-reader        # 工具名命名空间：[A-Za-z0-9_-]{1,32}
+        transport: stdio              # stdio | streamable-http
+        command: npx                  # stdio：可执行文件
+        args: ['@sylphx/pdf-reader-mcp']
+        env: {}                       # 可选，合并到清理后的环境变量之上
+```
+
+启动 dsh 后，服务器的工具会以 `mcp__<serverName>__<tool>` 的形式出现（例如
+`mcp__pdf-reader__pdf_read`）。若 `cordis.patch.yml` 里只有首次初始化生成的空根占位符
+`[]`，插入前需先删除该行。参考各工具目录下的 `config/dsh.yml`，或直接运行
+`install.sh` / `install.ps1` 自动写入。
 
 ## 离线打包
 

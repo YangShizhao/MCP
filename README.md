@@ -1,7 +1,7 @@
 # MCP Tools Library / MCP 工具库
 
-A collection of MCP (Model Context Protocol) servers for AI tools — Claude Code, Cline, Codex, Continue, and more.
-适用于多种 AI 工具的 MCP 服务器集合。
+A collection of MCP (Model Context Protocol) servers for AI tools — Claude Code, Cline, Codex, Continue, DeepSeek Harness, and more.
+适用于多种 AI 工具（Claude Code、Cline、Codex、Continue、DeepSeek Harness 等）的 MCP 服务器集合。
 
 ## Project Structure / 目录结构
 
@@ -106,7 +106,7 @@ bash install.sh --target ~/my-tools
 The installer automatically / 安装脚本自动:
 - Detects system Node.js/Python versions; uses bundled runtimes if system versions don't meet requirements / 检测系统运行时版本，不满足则使用打包版本
 - Installs all deps from the unified `deps/` directory (no network) / 从统一 `deps/` 目录安装（无需网络）
-- Configures Claude Code & Cline MCP settings (merge, never overwrite) / 配置 Claude Code 与 Cline 的 MCP 设置（合并，不覆盖）
+- Configures Claude Code, Cline, Codex CLI & DeepSeek Harness MCP settings (merge, never overwrite) / 配置 Claude Code、Cline、Codex CLI 与 DeepSeek Harness 的 MCP 设置（合并，不覆盖）
 
 ## Quick Start (Online) / 快速开始（联网环境）
 
@@ -134,6 +134,7 @@ See `config/` templates under each tool directory. / 参考各工具目录下的
 - [Claude Code config](pdf/pdf-reader-mcp/config/claude-code.json)
 - [Cline config](pdf/pdf-reader-mcp/config/cline.json)
 - [Codex config](pdf/pdf-reader-mcp/config/codex.json)
+- [DeepSeek Harness config](pdf/pdf-reader-mcp/config/dsh.yml) — YAML loader patch for `~/.dsh/cordis.patch.yml`
 
 ## Runtime Requirements / 运行时要求
 

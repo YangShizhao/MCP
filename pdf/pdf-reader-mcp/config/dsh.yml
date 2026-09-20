@@ -1,0 +1,20 @@
+# DeepSeek Harness (dsh) — MCP 配置片段
+#
+# 用法：把下面的 - insert: 整段追加到 $DSH_HOME/cordis.patch.yml
+#       （Windows 默认 %USERPROFILE%\.dsh\cordis.patch.yml；Linux/Mac 默认 ~/.dsh/cordis.patch.yml）
+#       该文件是 dsh 的 YAML 加载器补丁层，对所有 profile 生效。
+#       若文件里只有默认的空根占位符「[]」，先删除该行再粘贴。
+#       重启 dsh 后工具将以 mcp__<serverName>__<tool> 的名称出现。
+#
+# 离线安装包（install.sh / install.ps1）会自动写入该配置，并改用
+# bin/pdf-reader.cmd（Windows）或 bin/pdf-reader.sh（Linux/Mac）启动器。
+- insert:
+    - id: mcp-pdf-reader
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pdf-reader
+        transport: stdio
+        command: npx
+        args:
+          - '@sylphx/pdf-reader-mcp'
+        # 高性能 PDF 读取、搜索、内容提取和表格识别

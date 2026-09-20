@@ -14,10 +14,13 @@
     Auto-configure Cline (VSCode) MCP settings (default: $true)
 .PARAMETER ConfigureCodex
     Auto-configure Codex CLI MCP settings in ~/.codex/config.toml (default: $true)
+.PARAMETER ConfigureDsh
+    Auto-configure DeepSeek Harness MCP settings in ~/.dsh/cordis.patch.yml (default: $true)
 .EXAMPLE
     .\install.ps1
     .\install.ps1 -TargetPath "D:\Tools\MCP"
     .\install.ps1 -ConfigureCodex $false
+    .\install.ps1 -ConfigureDsh $false
 #>
 
 param(
@@ -25,7 +28,8 @@ param(
     [bool]$AddToPath = $true,
     [bool]$ConfigureClaudeCode = $true,
     [bool]$ConfigureCline = $true,
-    [bool]$ConfigureCodex = $true
+    [bool]$ConfigureCodex = $true,
+    [bool]$ConfigureDsh = $true
 )
 
 $ErrorActionPreference = "Continue"
@@ -36,6 +40,63 @@ function Write-OK    { Write-Host "[OK]    " -ForegroundColor Green  -NoNewline;
 function Write-Warn  { Write-Host "[WARN]  " -ForegroundColor Yellow -NoNewline; Write-Host $args[0] }
 function Write-Error_ { Write-Host "[ERROR] " -ForegroundColor Red    -NoNewline; Write-Host $args[0] }
 function Write-Step  { Write-Host ""; Write-Host ">>> $($args[0])" -ForegroundColor Cyan }
+
+# ---------------------------------------------------------------------------
+# DeepSeek Harness (dsh) helpers
+#
+# dsh keeps one home-level patch layer at %USERPROFILE%\.dsh\cordis.patch.yml
+# that is applied over EVERY profile (web / headless / sdk / acp / custom).
+# Each MCP server is one insert row naming the '@deepseek-ai/dsh-mcp-client'
+# plugin; its tools then appear as mcp__<serverName>__<tool>.
+# ---------------------------------------------------------------------------
+
+# Encode a string as a YAML double-quoted scalar (backslashes and quotes escaped).
+function ConvertTo-YamlScalar {
+    param([string]$Value)
+    # .Replace() is literal; -replace would treat the replacement as a regex
+    # substitution and silently drop backslashes from Windows paths.
+    $escaped = $Value.Replace('\', '\\').Replace('"', '\"')
+    return '"' + $escaped + '"'
+}
+
+# Render one mcp-client insert row. Every row uses Windows line endings: the
+# surrounding file is written with [Environment]::NewLine, and a stray LF would
+# split a YAML scalar across two lines.
+function New-DshServerBlock {
+    param(
+        [string]$ServerName,
+        [string]$LauncherPath,
+        [hashtable]$EnvVars = @{},
+        [string]$Note = ""
+    )
+    # NOTE: each element is wrapped in parentheses. Windows PowerShell 5.1
+    # splits an unparenthesized `"a" + $b` inside an array literal into two
+    # separate elements, which would break the YAML scalar across lines.
+    $lines = @(
+        "    - id: mcp-$ServerName",
+        "      name: '@deepseek-ai/dsh-mcp-client'",
+        "      config:",
+        "        serverName: $ServerName",
+        "        transport: stdio",
+        "        command: cmd",
+        "        args:",
+        "          - /d",
+        "          - /s",
+        "          - /c",
+        ("          - " + (ConvertTo-YamlScalar $LauncherPath))
+    )
+    if ($EnvVars -and $EnvVars.Count -gt 0) {
+        $lines += "        env:"
+        foreach ($key in $EnvVars.Keys) {
+            $lines += ("          ${key}: " + (ConvertTo-YamlScalar ([string]$EnvVars[$key])))
+        }
+    }
+    if ($Note) { $lines += "        # $Note" }
+    $block = ($lines -join "`r`n") + "`r`n"
+    # Normalize any LF that reached this point (differently-set line separators
+    # would otherwise be written inside a YAML value and break the file).
+    return $block.Replace("`r`n", "`n").Replace("`n", "`r`n")
+}
 
 Write-Host ""
 Write-Host "==============================================" -ForegroundColor Magenta
@@ -404,6 +465,74 @@ if ($ConfigureCodex) {
             Write-OK "Codex: +$newCodexCount tool(s) -> $codexFile"
         } else {
             Write-Info "Codex config already up to date"
+        }
+    }
+}
+
+# ---- DeepSeek Harness (dsh, YAML loader patch) ----
+if ($ConfigureDsh) {
+    $dshDir = "$env:USERPROFILE\.dsh"
+    $dshPatch = "$dshDir\cordis.patch.yml"
+
+    # Build the server rows: serverName -> launcher / env / note
+    $dshServers = [ordered]@{}
+    if ($HasPdfTools) {
+        $dshServers["pdf-reader"]  = @{ cmd = "$TargetPath\bin\pdf-reader.cmd";  env = @{}; note = "PDF read, search, extract, render" }
+        $dshServers["pdf-toolkit"] = @{ cmd = "$TargetPath\bin\pdf-toolkit.cmd"; env = @{}; note = "PDF create, edit, merge, split, forms, encrypt" }
+    }
+    if ($HasOfficeTools -and $PythonExe) {
+        $docs = "C:\Users\$env:USERNAME\Documents"
+        $dshServers["word"]  = @{ cmd = "$TargetPath\bin\wordmcp.cmd";  env = @{ WORD_ALLOWLIST_ROOTS = $docs;  WORD_ENABLE_WRITE = "true" };  note = "Word docs - 51 tools" }
+        $dshServers["ppt"]   = @{ cmd = "$TargetPath\bin\pptmcp.cmd";   env = @{ PPT_ALLOWLIST_ROOTS = $docs;   PPT_ENABLE_WRITE = "true" };   note = "PowerPoint - 48 tools" }
+        $dshServers["excel"] = @{ cmd = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $docs; EXCEL_ENABLE_WRITE = "true" }; note = "Excel - 65 tools" }
+    }
+
+    if ($dshServers.Count -eq 0) {
+        Write-Info "No tools available for DeepSeek Harness config"
+    } else {
+        if (-not (Test-Path $dshDir)) { New-Item -ItemType Directory -Path $dshDir -Force | Out-Null }
+
+        # Read the existing user patch layer, if any. The generated empty-root
+        # placeholder ("[]") is dropped so the file cannot end up with two YAML
+        # root nodes; every other user row is preserved verbatim.
+        $dshLines = @()
+        if (Test-Path $dshPatch) {
+            Copy-Item $dshPatch "$dshPatch.bak" -Force -EA SilentlyContinue
+            $dshLines = @(Get-Content $dshPatch)
+            if ($dshLines.Count -gt 0) { $dshLines[0] = $dshLines[0].TrimStart([char]0xFEFF) }
+        }
+        $dshExisting = $dshLines -join "`n"
+        $kept = @($dshLines | Where-Object { $_.Trim() -ne "[]" })
+
+        $newBlocks = @()
+        $newDshCount = 0
+        foreach ($name in $dshServers.Keys) {
+            # Idempotent: never rewrite a row the user already has (an override wins)
+            if ($dshExisting -match [regex]::Escape("- id: mcp-$name")) { continue }
+            $srv = $dshServers[$name]
+            $newBlocks += New-DshServerBlock -ServerName $name -LauncherPath $srv.cmd -EnvVars $srv.env -Note $srv.note
+            $newDshCount++
+        }
+
+        if ($newDshCount -eq 0) {
+            Write-Info "DeepSeek Harness config already up to date"
+        } else {
+            $nl = "`r`n"
+            $outLines = @()
+            if ($kept.Count -gt 0) { $outLines += $kept }
+            else {
+                $outLines += "# DeepSeek Harness user patch layer (`$DSH_HOME/cordis.patch.yml)."
+                $outLines += "# Applies to every dsh profile; MCP rows below are maintained by MCP Tools install.ps1."
+            }
+            $outLines += "# --- MCP Tools (added by install.ps1) ---"
+            $outLines += "- insert:"
+            $newText = (($outLines -join $nl) + $nl + ($newBlocks -join "")).Replace("`r`n", "`n").Replace("`n", $nl)
+
+            # UTF8 without BOM: a byte-order mark would sit in front of the first
+            # YAML key and can break strict parsers.
+            [System.IO.File]::WriteAllText($dshPatch, $newText, (New-Object System.Text.UTF8Encoding($false)))
+            Write-OK "DeepSeek Harness: +$newDshCount tool(s) -> $dshPatch"
+            Write-Info "Tools appear as mcp__<name>__<tool> after the next dsh start"
         }
     }
 }

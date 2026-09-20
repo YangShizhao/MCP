@@ -1,0 +1,24 @@
+# DeepSeek Harness (dsh) — MCP 配置片段
+#
+# 用法：把下面的 - insert: 整段追加到 $DSH_HOME/cordis.patch.yml
+#       （Windows 默认 %USERPROFILE%\.dsh\cordis.patch.yml；Linux/Mac 默认 ~/.dsh/cordis.patch.yml）
+#       该文件是 dsh 的 YAML 加载器补丁层，对所有 profile 生效。
+#       若文件里只有默认的空根占位符「[]」，先删除该行再粘贴。
+#       重启 dsh 后工具将以 mcp__<serverName>__<tool> 的名称出现。
+#
+# 离线安装包（install.sh / install.ps1）会自动写入该配置，并改用
+# bin/wordmcp.cmd（Windows）或 bin/wordmcp.sh（Linux/Mac）启动器。
+- insert:
+    - id: mcp-word
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: word
+        transport: stdio
+        command: python
+        args:
+          - '-m'
+          - wordmcp.server
+        env:
+          WORD_ALLOWLIST_ROOTS: '/home'
+          WORD_ENABLE_WRITE: 'true'
+        # Word 文档处理 MCP — 51 个工具覆盖文档创建、模板组装、修订跟踪、结构 QA
