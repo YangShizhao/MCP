@@ -275,6 +275,91 @@ if(!$SkipOffice){
 }
 wOK "Config files generated"
 
+# ---- 7.5 DeepSeek Harness (dsh) config snippets ----
+# dsh keeps MCP servers in a YAML loader-patch file, $DSH_HOME/cordis.patch.yml
+# (default ~/.dsh/cordis.patch.yml), applied over EVERY profile. Each server is
+# one insert row naming the '@deepseek-ai/dsh-mcp-client' plugin; its tools then
+# appear as mcp__<serverName>__<tool>.
+wI "Generating DeepSeek Harness config snippets..."
+
+function New-DshTemplateRow {
+    param(
+        [string]$ServerName,      # model-facing namespace (serverName)
+        [string]$Launcher,        # command: launcher name without extension
+        [string]$Note,            # trailing comment
+        [hashtable]$EnvVars = @{},
+        [string]$LauncherDir      # directory holding the launcher
+    )
+    $nl = "`r`n"
+    # Joined by hand, not Join-Path: the Unix variant carries a POSIX directory.
+    $cmdPath = $LauncherDir.TrimEnd('\', '/') + '\' + $Launcher + '.cmd'
+    if ($LauncherDir -like "/*") { $cmdPath = $LauncherDir.TrimEnd('/') + '/' + $Launcher + '.sh' }
+    $row = @()
+    $row += "    - id: mcp-$ServerName"
+    $row += "      name: '@deepseek-ai/dsh-mcp-client'"
+    $row += "      config:"
+    $row += "        serverName: $ServerName"
+    $row += "        transport: stdio"
+    if ($LauncherDir -like "/*") {
+        $row += "        command: $cmdPath"
+    } else {
+        $row += "        command: cmd"
+        $row += "        args:"
+        $row += "          - /d"
+        $row += "          - /s"
+        $row += "          - /c"
+        # Single-quoted YAML scalar: backslashes stay literal.
+        $row += ("          - '" + $cmdPath + "'")
+    }
+    if ($EnvVars.Count -gt 0) {
+        $row += "        env:"
+        foreach ($k in $EnvVars.Keys) { $row += "          ${k}: $($EnvVars[$k])" }
+    }
+    $row += "        # $Note"
+    return (($row -join $nl) + $nl + $nl)
+}
+
+$dshHeader = @(
+    "# DeepSeek Harness MCP 配置片段",
+    "#",
+    "# 用法：把下面的 - insert: 整段追加到 `$DSH_HOME/cordis.patch.yml",
+    "#       （Windows 默认 %USERPROFILE%\.dsh\cordis.patch.yml，Linux/Mac 默认 ~/.dsh/cordis.patch.yml）",
+    "#       该文件是 YAML 加载器补丁层，对所有 dsh profile 生效。",
+    "#       若文件里只有默认的空根占位符「[]」，请先删除该行再粘贴。",
+    "#       启动 dsh 后工具将以 mcp__<serverName>__<tool> 的名称出现。",
+    "#",
+    "# 安装脚本（install.sh / install.ps1）会自动完成这一步，本文件仅供参考。",
+    "",
+    "- insert:"
+) -join "`r`n"
+
+$dshRows = ""
+$dshUnixRows = ""
+if (!$SkipPdf) {
+    $dshRows += New-DshTemplateRow -ServerName "pdf-reader"  -Launcher "pdf-reader"  -Note "PDF 读取、搜索、内容提取、表格识别" -LauncherDir "$IB\bin"
+    $dshRows += New-DshTemplateRow -ServerName "pdf-toolkit" -Launcher "pdf-toolkit" -Note "PDF 创建、编辑、合并拆分、水印、表单、加密" -LauncherDir "$IB\bin"
+    $dshUnixRows += New-DshTemplateRow -ServerName "pdf-reader"  -Launcher "pdf-reader"  -Note "PDF 读取、搜索、内容提取、表格识别" -LauncherDir "/opt/mcp-tools/bin"
+    $dshUnixRows += New-DshTemplateRow -ServerName "pdf-toolkit" -Launcher "pdf-toolkit" -Note "PDF 创建、编辑、合并拆分、水印、表单、加密" -LauncherDir "/opt/mcp-tools/bin"
+}
+if (!$SkipOffice) {
+    $docs = "C:\Users\%USERNAME%\Documents"
+    $dshRows += New-DshTemplateRow -ServerName "word"  -Launcher "wordmcp"  -Note "Word 文档处理 — 51 个工具" -LauncherDir "$IB\bin" -EnvVars @{ WORD_ALLOWLIST_ROOTS = "'$docs'"; WORD_ENABLE_WRITE = '"true"' }
+    $dshRows += New-DshTemplateRow -ServerName "ppt"   -Launcher "pptmcp"   -Note "PowerPoint 演示文稿 — 48 个工具" -LauncherDir "$IB\bin" -EnvVars @{ PPT_ALLOWLIST_ROOTS = "'$docs'"; PPT_ENABLE_WRITE = '"true"' }
+    $dshRows += New-DshTemplateRow -ServerName "excel" -Launcher "excelmcp" -Note "Excel 电子表格 — 65 个工具" -LauncherDir "$IB\bin" -EnvVars @{ EXCEL_ALLOWLIST_ROOTS = "'$docs'"; EXCEL_ENABLE_WRITE = '"true"' }
+    $dshUnixRows += New-DshTemplateRow -ServerName "word"  -Launcher "wordmcp"  -Note "Word 文档处理 — 51 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ WORD_ALLOWLIST_ROOTS = '"/home"'; WORD_ENABLE_WRITE = '"true"' }
+    $dshUnixRows += New-DshTemplateRow -ServerName "ppt"   -Launcher "pptmcp"   -Note "PowerPoint 演示文稿 — 48 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ PPT_ALLOWLIST_ROOTS = '"/home"'; PPT_ENABLE_WRITE = '"true"' }
+    $dshUnixRows += New-DshTemplateRow -ServerName "excel" -Launcher "excelmcp" -Note "Excel 电子表格 — 65 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ EXCEL_ALLOWLIST_ROOTS = '"/home"'; EXCEL_ENABLE_WRITE = '"true"' }
+}
+
+if ($dshRows) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText("$cfg\dsh.yml", ($dshHeader + "`r`n" + $dshRows).Replace("`r`n", "`n").Replace("`n", "`r`n"), $utf8NoBom)
+    [System.IO.File]::WriteAllText("$cfg\dsh-unix.yml", ($dshHeader + "`r`n" + $dshUnixRows).Replace("`r`n", "`n").Replace("`n", "`r`n"), $utf8NoBom)
+    wOK "DeepSeek Harness config snippets generated (dsh.yml / dsh-unix.yml)"
+} else {
+    wW "No DeepSeek Harness config snippet generated (no tools selected)"
+}
+
 # ---- 8. Runtimes ----
 if(!$SkipNodejs){
   $step++; wS "$step/$totalSteps Downloading Node.js portable..."
@@ -342,6 +427,10 @@ Run PowerShell as Administrator:
 ```
 The installer auto-detects system runtimes and uses bundled ones if needed.
 All deps are installed from the unified `deps/` directory (no network required).
+The installer also merges the MCP servers into Claude Code, Cline, Codex CLI and
+DeepSeek Harness (`%USERPROFILE%\.dsh\cordis.patch.yml`) without overwriting your
+existing entries; for a manual dsh setup append the `- insert:` block from
+`config/dsh.yml` to that file.
 
 Double-click `install.cmd` or run `install.ps1` as Administrator.
 "@
@@ -375,6 +464,8 @@ Write-Host "|    deps/npm/      - Node.js dependencies     |" -F Green
 Write-Host "|    deps/pip/      - Python wheels            |" -F Green
 Write-Host "|    deps/runtimes/ - Node.js + Python         |" -F Green
 Write-Host "|    tools/         - Tool source code         |" -F Green
+Write-Host "|    config/        - MCP config templates     |" -F Green
+Write-Host "|      (Claude/Cline/Codex/DeepSeek Harness)   |" -F Green
 Write-Host "==============================================" -F Green
 Write-Host ""
 Write-Host "Press any key to close..." -ForegroundColor White

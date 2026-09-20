@@ -98,49 +98,102 @@ cache_file() {
 }
 
 # 缓存 Git 仓库（浅克隆到 git 缓存目录，之后复用）
+# 用法（路径必须捕获，不要再拼 $CACHE_DIR/<name>）：
+#   GIT_DIR=$(cache_git "name" "url" "ref")
+# 诊断信息一律写 stderr，保证命令替换只拿到仓库路径。
 cache_git() {
   local name="$1"
   local url="$2"
   local ref="${3:-main}"
   local dest="$CACHE_GIT/$name"
   if [ -d "$dest/.git" ] && ! $NO_CACHE; then
-    log_cache "命中: $name (git)"
+    log_cache "命中: $name (git)" >&2
     echo "$dest"
     return 0
   fi
-  log_info "克隆: $url (ref: $ref)"
+  log_info "克隆: $url (ref: $ref)" >&2
   rm -rf "$dest"
   git clone --depth 1 --branch "$ref" "$url" "$dest" 2>&1 | while IFS= read -r line; do
-    echo "         $line"
+    echo "         $line" >&2
   done
   if [ ${PIPESTATUS[0]} -ne 0 ]; then
-    log_warn "分支 $ref 不存在，尝试默认分支..."
+    log_warn "分支 $ref 不存在，尝试默认分支..." >&2
     git clone --depth 1 "$url" "$dest" 2>&1 | while IFS= read -r line; do
-      echo "         $line"
+      echo "         $line" >&2
     done
   fi
-  log_cache "已缓存: $name (git)"
+  log_cache "已缓存: $name (git)" >&2
   echo "$dest"
 }
 
-# npm 缓存：复用 node_modules
+# npm 缓存：复用 node_modules。
+# node_modules 里有平台相关的原生可选依赖（例如 @napi-rs/canvas 的
+# win32-x64-msvc / linux-x64-gnu 绑定），跨平台直接复用会让目标平台上的
+# 服务启动即崩。缓存里记录生成时的平台+Node ABI，不匹配就不用缓存。
+NPM_CACHE_STAMP="$CACHE_NPM/.cache-stamp"
+npm_cache_stamp() {
+  echo "$PLATFORM $(node -p 'process.platform + "-" + process.arch' 2>/dev/null || echo unknown)"
+}
 cache_npm_modules() {
   if $NO_CACHE; then return 1; fi
   if [ -d "$CACHE_NPM/node_modules/@sylphx/pdf-reader-mcp" ]; then
-    log_cache "命中: npm node_modules"
-    return 0
+    if [ -f "$NPM_CACHE_STAMP" ] && [ "$(cat "$NPM_CACHE_STAMP")" = "$(npm_cache_stamp)" ]; then
+      log_cache "命中: npm node_modules"
+      return 0
+    fi
+    log_warn "npm 缓存平台不匹配（缓存: $(cat "$NPM_CACHE_STAMP" 2>/dev/null || echo '未知') / 当前: $(npm_cache_stamp)），重新安装"
+    return 1
   fi
   return 1
 }
 
-# pip 缓存：复用 wheel 文件
+# wheel 兼容性过滤（stdin 读路径列表，stdout 输出当前解释器可安装的那些）。
+# 必须走 python -c：heredoc 会占用 stdin，管道数据会被丢弃。
+PY_WHEEL_FILTER='
+import sys
+from pip._internal.models.wheel import Wheel
+from pip._internal.utils.compatibility_tags import get_supported
+
+tags = {str(tag) for tag in get_supported()}
+for line in sys.stdin:
+    path = line.strip()
+    if not path:
+        continue
+    try:
+        wheel = Wheel(path.rsplit("/", 1)[-1])
+    except Exception:
+        continue
+    if any(str(tag) in tags for tag in wheel.file_tags):
+        print(path)
+'
+
+# pip 缓存：复用 wheel 文件。
+# 只复用「当前解释器 + 当前平台」可安装的 wheel：缓存里可能留着上一次为其它
+# 平台（例如 Windows）下载的 wheel，它们的 ABI/平台标签与本机不匹配，复制进
+# bundle 后离线安装必然失败。不兼容的 wheel 直接跳过，让 pip 走网络补齐。
 restore_pip_cache() {
   local dest="$1"
-  if ! $NO_CACHE && ls "$CACHE_PIP"/*.whl 2>/dev/null | head -1 | grep -q .; then
-    log_cache "命中: pip wheels (共 $(ls "$CACHE_PIP"/*.whl 2>/dev/null | wc -l) 个)"
-    cp "$CACHE_PIP"/*.whl "$dest/" 2>/dev/null || true
+  if $NO_CACHE; then
+    return 1
+  fi
+  [ -d "$CACHE_PIP" ] || return 1
+  ls "$CACHE_PIP"/*.whl >/dev/null 2>&1 || return 1
+
+  local total compatible count=0 whl
+  total=$(ls "$CACHE_PIP"/*.whl 2>/dev/null | wc -l)
+  # 注意：这里必须用 python -c（代码走 argv），不能用 heredoc ——
+  # heredoc 会占用 stdin，管道里的文件名根本读不到。
+  compatible=$(ls "$CACHE_PIP"/*.whl 2>/dev/null | $PYTHON_EXE -c "$PY_WHEEL_FILTER")
+  while IFS= read -r whl; do
+    [ -n "$whl" ] || continue
+    cp "$whl" "$dest/" 2>/dev/null && count=$((count + 1))
+  done <<< "$compatible"
+
+  if [ "$count" -gt 0 ]; then
+    log_cache "命中: pip wheels（兼容本机 $count/$total 个，其余重新下载）"
     return 0
   fi
+  log_warn "缓存的 $total 个 wheel 均与当前平台/Python 不兼容，将重新下载"
   return 1
 }
 
@@ -286,6 +339,7 @@ PKGJSON
   if ! $NO_CACHE; then
     rm -rf "$CACHE_NPM/node_modules"
     cp -r node_modules "$CACHE_NPM/"
+    npm_cache_stamp > "$NPM_CACHE_STAMP"
     log_cache "已缓存: npm node_modules → $CACHE_NPM"
   fi
 fi
@@ -302,8 +356,8 @@ cd "$WORK_DIR"
 rm -rf pdf-toolkit-mcp
 
 # 使用缓存加速 Git 克隆
-cache_git "pdf-toolkit-mcp" "https://github.com/beepboop2025/pdf-toolkit-mcp.git" "$PDF_TOOLKIT_REF"
-cp -r "$CACHE_DIR/pdf-toolkit-mcp" pdf-toolkit-mcp
+GIT_TOOLKIT_DIR=$(cache_git "pdf-toolkit-mcp" "https://github.com/beepboop2025/pdf-toolkit-mcp.git" "$PDF_TOOLKIT_REF")
+cp -r "$GIT_TOOLKIT_DIR" pdf-toolkit-mcp
 
 cd pdf-toolkit-mcp
 
@@ -357,8 +411,8 @@ if ! $SKIP_OFFICE; then
   rm -rf mcp-office
 
   # 使用缓存加速 Git 克隆
-  cache_git "mcp-office" "https://github.com/dosev-ai/mcp-office.git" "main"
-  cp -r "$CACHE_DIR/mcp-office" mcp-office
+  GIT_OFFICE_DIR=$(cache_git "mcp-office" "https://github.com/dosev-ai/mcp-office.git" "main")
+  cp -r "$GIT_OFFICE_DIR" mcp-office
 
   cd mcp-office
 
@@ -399,8 +453,10 @@ if ! $SKIP_OFFICE; then
   else
     log_info "  部分 wheel 缺失，从网络下载..."
     # Download only known top-level deps (much faster than full venv)
-    for pkg in fastmcp python-docx python-pptx openpyxl Pillow setuptools wheel; do
-      ls "$WHEELS_DIR"/${pkg}*.whl 2>/dev/null | head -1 | grep -q . && continue
+    for pkg in fastmcp python-docx python-pptx openpyxl Pillow setuptools wheel pyyaml; do
+      # 只有存在「兼容本机」的 wheel 才跳过；仅有不兼容的旧 wheel 时必须重新下载
+      COMPAT_WHEEL=$(ls "$WHEELS_DIR"/${pkg}*.whl 2>/dev/null | $PYTHON_EXE -c "$PY_WHEEL_FILTER" | head -1)
+      [ -n "$COMPAT_WHEEL" ] && continue
       log_info "    下载: $pkg"
       $PYTHON_EXE -m pip download -d "$WHEELS_DIR" "$pkg" 2>&1 | while IFS= read -r line; do
         echo "         $line"
@@ -453,20 +509,51 @@ CMDEOF
   done
 
   # Unix 启动器
+  # 打包时把「本机可用的 Python >= 3.11 绝对路径」写进启动器：MCP 客户端
+  # （如 dsh）会用受限环境 spawn 子进程，PATH/HOME 未必指向 conda 环境，
+  # 只靠运行时探测可能落到过旧的系统 python3。
+  PACK_PYTHON=""
+  if [ -n "$PYTHON_EXE" ] && "$PYTHON_EXE" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    case "$PYTHON_EXE" in
+      /*) PACK_PYTHON="$PYTHON_EXE" ;;
+      *)  PACK_PYTHON=$(command -v "$PYTHON_EXE" 2>/dev/null || true) ;;
+    esac
+  fi
   for tool in wordmcp pptmcp excelmcp; do
     cat > "$OFFICE_BIN_DIR/${tool}.sh" << SHEOF
 #!/bin/bash
+# mcp-office 需要 Python >= 3.11；优先使用打包的运行时，其次在 PATH 中
+# 查找 3.12/3.11（很多系统默认的 python3 仍是 3.10 或更低）。
 BUNDLE_DIR="\$(cd "\$(dirname "\$0")/.." && pwd)"
+BUNDLE_DEPS="\$BUNDLE_DIR/deps"
+BUNDLE_TOOLS="\$BUNDLE_DIR/tools"
 PYTHON="\$BUNDLE_DEPS/runtimes/python/bin/python3"
 MCP_OFFICE="\$BUNDLE_TOOLS/mcp-office"
 
+export PYTHONPATH="\$MCP_OFFICE/shared/src:\$MCP_OFFICE/wordmcp/src:\$MCP_OFFICE/pptmcp/src:\$MCP_OFFICE/excelmcp/src:\$PYTHONPATH"
+
 if [ -x "\$PYTHON" ]; then
     export PATH="\$BUNDLE_DEPS/runtimes/python/bin:\$PATH"
-    export PYTHONPATH="\$MCP_OFFICE/shared/src:\$MCP_OFFICE/wordmcp/src:\$MCP_OFFICE/pptmcp/src:\$MCP_OFFICE/excelmcp/src:\$PYTHONPATH"
     exec "\$PYTHON" -m ${tool}.server "\$@"
-else
-    exec python3 -m ${tool}.server "\$@"
 fi
+
+for candidate in "${PACK_PYTHON}" python3.13 python3.12 python3.11 \
+                 "\$HOME/miniforge3/bin/python3" "\$HOME/anaconda3/bin/python3" \
+                 "\$HOME/miniconda3/bin/python3" \
+                 /usr/local/bin/python3.12 /usr/local/bin/python3.11 \
+                 /opt/conda/bin/python3; do
+    [ -n "\$candidate" ] || continue
+    if command -v "\$candidate" >/dev/null 2>&1; then
+        # 只接受 >= 3.11 的解释器（mcp-office 的 requires-python 下限）
+        if "\$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+            exec "\$candidate" -m ${tool}.server "\$@"
+        fi
+    fi
+done
+
+echo "${tool}.sh: 未找到 Python >= 3.11（mcp-office 要求）。" >&2
+echo "请安装 Python 3.11+，或把可用的解释器目录加入 PATH。" >&2
+exec python3 -m ${tool}.server "\$@"
 SHEOF
     chmod +x "$OFFICE_BIN_DIR/${tool}.sh" 2>/dev/null || true
   done
@@ -512,9 +599,11 @@ endlocal
 CMDEOF
 
 # Unix 启动器 (.sh)
+# 注意：BUNDLE_DEPS / BUNDLE_TOOLS 必须先定义，TOOL 路径由它们拼出
 cat > "$BIN_DIR/pdf-reader.sh" << 'SHEOF'
 #!/bin/bash
 BUNDLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BUNDLE_DEPS="$BUNDLE_DIR/deps"
 NODEJS="$BUNDLE_DEPS/runtimes/nodejs/bin/node"
 TOOL="$BUNDLE_DEPS/npm/node_modules/@sylphx/pdf-reader-mcp/dist/index.js"
 
@@ -528,6 +617,8 @@ SHEOF
 cat > "$BIN_DIR/pdf-toolkit.sh" << 'SHEOF'
 #!/bin/bash
 BUNDLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BUNDLE_DEPS="$BUNDLE_DIR/deps"
+BUNDLE_TOOLS="$BUNDLE_DIR/tools"
 NODEJS="$BUNDLE_DEPS/runtimes/nodejs/bin/node"
 TOOL="$BUNDLE_TOOLS/pdf-toolkit-mcp/dist/index.js"
 
@@ -686,6 +777,98 @@ CFGEOF
 fi
 
 log_ok "MCP 配置文件已生成"
+
+# ---- 6.5 生成 DeepSeek Harness (dsh) 配置片段 ----
+# dsh 的 MCP 服务器写在 $DSH_HOME/cordis.patch.yml（默认 ~/.dsh/cordis.patch.yml），
+# 是一个 YAML「加载器补丁」文件：所有 profile（web/headless/sdk/acp/自定义）都会应用。
+# 每个服务器是一条 insert 记录，引用 @deepseek-ai/dsh-mcp-client 插件，
+# 工具名形如 mcp__<serverName>__<tool>。
+log_info "生成 DeepSeek Harness 配置片段..."
+
+DSH_HEADER='# DeepSeek Harness MCP 配置片段
+#
+# 用法：把下面的 - insert: 整段追加到 $DSH_HOME/cordis.patch.yml
+#       （Windows 默认 %USERPROFILE%\.dsh\cordis.patch.yml，Linux/Mac 默认 ~/.dsh/cordis.patch.yml）
+#       该文件是 YAML 加载器补丁层，对所有 dsh profile 生效。
+#       若文件里只有默认的空根占位符「[]」，请先删除该行再粘贴。
+#       启动 dsh 后工具将以 mcp__<serverName>__<tool> 的名称出现。
+#
+# 安装脚本（install.sh / install.ps1）会自动完成这一步，本文件仅供参考。'
+
+dsh_block() {  # $1=name $2=launcher-name $3=desc $4=env-yaml(可空)
+  # YAML 单引号标量中反斜杠无需转义，直接写入 Windows 路径
+  local launcher="${INSTALL_BASE}\\bin\\$2.cmd"
+  printf '    - id: mcp-%s\n' "$1"
+  printf "      name: '@deepseek-ai/dsh-mcp-client'\n"
+  printf '      config:\n'
+  printf '        serverName: %s\n' "$1"
+  printf '        transport: stdio\n'
+  printf '        command: cmd\n'
+  printf '        args:\n'
+  printf '          - /d\n          - /s\n          - /c\n'
+  printf '          - %s\n' "'$launcher'"
+  [ -n "$4" ] && printf '        env:\n%s' "$4"
+  printf '        # %s\n' "$3"
+  printf '\n'
+}
+
+dsh_unix_block() {  # $1=name $2=launcher-name $3=desc $4=env-yaml(可空)
+  printf '    - id: mcp-%s\n' "$1"
+  printf "      name: '@deepseek-ai/dsh-mcp-client'\n"
+  printf '      config:\n'
+  printf '        serverName: %s\n' "$1"
+  printf '        transport: stdio\n'
+  printf '        command: /opt/mcp-tools/bin/%s.sh\n' "$2"
+  [ -n "$4" ] && printf '        env:\n%s' "$4"
+  printf '        # %s\n' "$3"
+  printf '\n'
+}
+
+> "$CONFIG_DIR/dsh-mcp-rows.txt"
+DSH_UNIX_ROWS="$CONFIG_DIR/.dsh-unix-rows.txt"
+> "$DSH_UNIX_ROWS"
+if ! $SKIP_PDF; then
+  dsh_block "pdf-reader" "pdf-reader" "PDF 读取、搜索、内容提取、表格识别" "" >> "$CONFIG_DIR/dsh-mcp-rows.txt"
+  dsh_block "pdf-toolkit" "pdf-toolkit" "PDF 创建、编辑、合并拆分、水印、表单、加密" "" >> "$CONFIG_DIR/dsh-mcp-rows.txt"
+  dsh_unix_block "pdf-reader" "pdf-reader" "PDF 读取、搜索、内容提取、表格识别" "" >> "$DSH_UNIX_ROWS"
+  dsh_unix_block "pdf-toolkit" "pdf-toolkit" "PDF 创建、编辑、合并拆分、水印、表单、加密" "" >> "$DSH_UNIX_ROWS"
+fi
+if ! $SKIP_OFFICE; then
+  # YAML 单引号标量：反斜杠无需转义
+  DSH_ENV_WORD="          WORD_ALLOWLIST_ROOTS: 'C:\\Users\\%USERNAME%\\Documents'
+          WORD_ENABLE_WRITE: \"true\"
+"
+  DSH_ENV_PPT="          PPT_ALLOWLIST_ROOTS: 'C:\\Users\\%USERNAME%\\Documents'
+          PPT_ENABLE_WRITE: \"true\"
+"
+  DSH_ENV_EXCEL="          EXCEL_ALLOWLIST_ROOTS: 'C:\\Users\\%USERNAME%\\Documents'
+          EXCEL_ENABLE_WRITE: \"true\"
+"
+  DSH_UNIX_ENV_WORD='          WORD_ALLOWLIST_ROOTS: "/home"
+          WORD_ENABLE_WRITE: "true"
+'
+  DSH_UNIX_ENV_PPT='          PPT_ALLOWLIST_ROOTS: "/home"
+          PPT_ENABLE_WRITE: "true"
+'
+  DSH_UNIX_ENV_EXCEL='          EXCEL_ALLOWLIST_ROOTS: "/home"
+          EXCEL_ENABLE_WRITE: "true"
+'
+  dsh_block "word" "wordmcp" "Word 文档处理 — 51 个工具" "$DSH_ENV_WORD" >> "$CONFIG_DIR/dsh-mcp-rows.txt"
+  dsh_block "ppt" "pptmcp" "PowerPoint 演示文稿 — 48 个工具" "$DSH_ENV_PPT" >> "$CONFIG_DIR/dsh-mcp-rows.txt"
+  dsh_block "excel" "excelmcp" "Excel 电子表格 — 65 个工具" "$DSH_ENV_EXCEL" >> "$CONFIG_DIR/dsh-mcp-rows.txt"
+  dsh_unix_block "word" "wordmcp" "Word 文档处理 — 51 个工具" "$DSH_UNIX_ENV_WORD" >> "$DSH_UNIX_ROWS"
+  dsh_unix_block "ppt" "pptmcp" "PowerPoint 演示文稿 — 48 个工具" "$DSH_UNIX_ENV_PPT" >> "$DSH_UNIX_ROWS"
+  dsh_unix_block "excel" "excelmcp" "Excel 电子表格 — 65 个工具" "$DSH_UNIX_ENV_EXCEL" >> "$DSH_UNIX_ROWS"
+fi
+
+if [ -s "$CONFIG_DIR/dsh-mcp-rows.txt" ]; then
+  { printf '%s\n\n' "$DSH_HEADER"; printf -- '- insert:\n'; cat "$CONFIG_DIR/dsh-mcp-rows.txt"; } > "$CONFIG_DIR/dsh.yml"
+  { printf '%s\n\n' "$DSH_HEADER"; printf -- '- insert:\n'; cat "$DSH_UNIX_ROWS"; } > "$CONFIG_DIR/dsh-unix.yml"
+  log_ok "DeepSeek Harness 配置片段已生成 (dsh.yml / dsh-unix.yml)"
+else
+  log_warn "未生成 DeepSeek Harness 配置片段（未包含任何工具）"
+fi
+rm -f "$CONFIG_DIR/dsh-mcp-rows.txt" "$DSH_UNIX_ROWS"
 
 # ---- 7. 下载 Node.js 便携版（默认打包，使用缓存） ----
 if (! $SKIP_NODEJS); then
@@ -912,6 +1095,12 @@ claude mcp add excel -- C:\MCP-Tools\bin\excelmcp.cmd
 
 ### Cline (VSCode)
 将 `config/cline.json` 中的配置合并到 VSCode 设置。
+
+### DeepSeek Harness (dsh)
+安装脚本会自动把 MCP 服务器写入 `~/.dsh/cordis.patch.yml`（Windows 为 `%USERPROFILE%\.dsh\cordis.patch.yml`），
+这是 dsh 的 YAML 加载器补丁层，对所有 profile（web/headless/sdk/acp）生效。
+手动配置时，把 `config/dsh.yml`（Windows）或 `config/dsh-unix.yml`（Linux/Mac）中的 `- insert:` 整段
+追加到该文件即可（若文件里只有空根占位符 `[]`，先删除该行）。重启 dsh 后工具将以 `mcp__<serverName>__<tool>` 出现。
 BUNDLEREADME
 
 log_ok "bundle README 已创建"
@@ -1016,6 +1205,7 @@ fi
 echo "║    - 全部 npm 依赖                           ║"
 echo "║    - 启动器脚本 (.cmd / .sh)                 ║"
 echo "║    - MCP 配置模板 (Claude/Cline/Codex)      ║"
+echo "║      + DeepSeek Harness (dsh)               ║"
 echo "║    - 安装脚本 (install.ps1 / install.sh)    ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
