@@ -229,14 +229,32 @@ endlocal
 }
 
 if(!$SkipOffice){
+  # 解释器必须能 import fastmcp；裸 python 可能命中 Microsoft Store 执行别名，
+  # 在 cmd 里必然失败，因此只作最后兜底。打包自带的运行时位于
+  # deps\runtimes\python；install.ps1 会把下面这行 PY 改写为它验证过的解释器。
   foreach($t in @("wordmcp","pptmcp","excelmcp")){
 @"
 @echo off
 setlocal
 set "BD=%~dp0.."
-set "PY=%BD%\python\python.exe"
 set "PYTHONPATH=%BD%\tools\mcp-office\shared\src;%BD%\tools\mcp-office\wordmcp\src;%BD%\tools\mcp-office\pptmcp\src;%BD%\tools\mcp-office\excelmcp\src;%PYTHONPATH%"
-if exist "%PY%" ( "%PY%" -m ${t}.server %* ) else ( python -m ${t}.server %* )
+set "PY=%BD%\deps\runtimes\python\python.exe"
+if not exist "%PY%" set "PY="
+if not defined PY goto :pylauncher
+"%PY%" -c "import fastmcp" >nul 2>nul
+if errorlevel 1 goto :pylauncher
+"%PY%" -m ${t}.server %*
+goto :done
+:pylauncher
+where py >nul 2>nul
+if errorlevel 1 goto :plainpython
+py -3 -c "import fastmcp" >nul 2>nul
+if errorlevel 1 goto :plainpython
+py -3 -m ${t}.server %*
+goto :done
+:plainpython
+python -m ${t}.server %*
+:done
 endlocal
 "@ | Set-Content "$bin\${t}.cmd" -Encoding ASCII
   }

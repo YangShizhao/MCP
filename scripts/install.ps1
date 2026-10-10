@@ -98,6 +98,28 @@ function New-DshServerBlock {
     return $block.Replace("`r`n", "`n").Replace("`n", "`r`n")
 }
 
+# Resolve a real Python interpreter. A bare `python` may resolve to the
+# Microsoft Store execution alias, which fails from cmd (and intermittently
+# elsewhere), so prefer the interpreter behind the `py` launcher and skip
+# anything under WindowsApps. Returns $null when no real interpreter is found.
+function Resolve-PythonInterpreter {
+    $pyLauncher = (Get-Command py -ErrorAction SilentlyContinue).Source
+    if ($pyLauncher) {
+        try {
+            $resolved = & $pyLauncher -3 -c "import sys;print(sys.executable)" 2>$null
+            $candidate = ([string]($resolved | Select-Object -First 1)).Trim()
+            if ($LASTEXITCODE -eq 0 -and $candidate -and (Test-Path $candidate)) { return $candidate }
+        } catch {
+            # Fall through to the PATH probes below.
+        }
+    }
+    foreach ($name in @("python", "python3")) {
+        $src = (Get-Command $name -ErrorAction SilentlyContinue).Source
+        if ($src -and $src -notlike "*\WindowsApps\*") { return $src }
+    }
+    return $null
+}
+
 Write-Host ""
 Write-Host "==============================================" -ForegroundColor Magenta
 Write-Host "|     MCP Tools - Offline Installer (Windows)  |" -ForegroundColor Magenta
@@ -173,7 +195,9 @@ $BundledPyInstaller = "$DepsRuntimes\python-3.11.9-amd64.exe"
 $PyInstallDir = "$TargetPath\python"
 
 if ($HasOfficeTools) {
-    $SysPy = (Get-Command python -ErrorAction SilentlyContinue).Source
+    # A bare `python` may be the Microsoft Store alias; resolve the real one first.
+    $SysPy = Resolve-PythonInterpreter
+    if (-not $SysPy) { $SysPy = (Get-Command python -ErrorAction SilentlyContinue).Source }
     if (-not $SysPy) { $SysPy = (Get-Command python3 -ErrorAction SilentlyContinue).Source }
     $SysPyOK = $false
     if ($SysPy) {
@@ -203,7 +227,8 @@ if ($HasOfficeTools) {
         Write-Host ""
 
         # Re-check for Python after user install
-        $SysPy = (Get-Command python -ErrorAction SilentlyContinue).Source
+        $SysPy = Resolve-PythonInterpreter
+        if (-not $SysPy) { $SysPy = (Get-Command python -ErrorAction SilentlyContinue).Source }
         if (-not $SysPy) { $SysPy = (Get-Command python3 -ErrorAction SilentlyContinue).Source }
         $SysPyOK = $false
         if ($SysPy) {
@@ -286,6 +311,27 @@ if ($HasOfficeTools -and $PythonExe) {
     Write-OK "Office runtime deps installed (PYTHONPATH mode)"
 }
 else { Write-Step "4/6 Skipping Office tools (not available)" }
+
+# Pin the interpreter this installer validated into the Office launchers: the
+# bundle's own runtime may be absent or missing the wheels, and a bare `python`
+# can hit the Microsoft Store alias. Each launcher keeps `py -3` as a fallback.
+if ($HasOfficeTools -and $PythonExe) {
+    $pinned = 0
+    foreach ($t in @("wordmcp", "pptmcp", "excelmcp")) {
+        $launcher = "$TargetPath\bin\$t.cmd"
+        if (-not (Test-Path $launcher)) { continue }
+        $lines = [System.IO.File]::ReadAllLines($launcher)
+        $changed = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^\s*set "PY=') { $lines[$i] = 'set "PY=' + $PythonExe + '"'; $changed = $true }
+        }
+        if ($changed) {
+            [System.IO.File]::WriteAllLines($launcher, $lines, (New-Object System.Text.ASCIIEncoding))
+            $pinned++
+        }
+    }
+    if ($pinned -gt 0) { Write-OK "Pinned $pinned Office launcher(s) to $PythonExe" }
+}
 
 # ---- 6. Configure AI tools + PATH ----
 Write-Step "5/6 Configuring AI tool MCP settings..."

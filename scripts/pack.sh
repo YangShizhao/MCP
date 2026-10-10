@@ -489,21 +489,34 @@ if ! $SKIP_OFFICE; then
 
   OFFICE_BIN_DIR="$BUNDLE_DIR/bin"
 
-  # Windows 启动器 - 使用 bundle 自带的 Python 或系统 Python
+  # Windows 启动器 - 优先用打包的 Python 运行时，其次 py 启动器。
+  # 解释器必须能 import fastmcp；裸 python 可能命中 Microsoft Store 执行别名，
+  # 在 cmd 里必然失败，因此只作最后兜底。install.ps1 会把 PY 那行改写为它
+  # 验证过的解释器。
   for tool in wordmcp pptmcp excelmcp; do
     cat > "$OFFICE_BIN_DIR/${tool}.cmd" << CMDEOF
 @echo off
 setlocal
 set "BUNDLE_DIR=%~dp0.."
-set "PYTHON=%BUNDLE_DIR%\python\python.exe"
-set "MCP_OFFICE=%BUNDLE_DIR%\tools\mcp-office"
+set "PYTHONPATH=%BUNDLE_DIR%\tools\mcp-office\shared\src;%BUNDLE_DIR%\tools\mcp-office\wordmcp\src;%BUNDLE_DIR%\tools\mcp-office\pptmcp\src;%BUNDLE_DIR%\tools\mcp-office\excelmcp\src;%PYTHONPATH%"
 
-if exist "%PYTHON%" (
-    set "PATH=%BUNDLE_DIR%\python;%BUNDLE_DIR%\python\Scripts;%PATH%"
-    "%PYTHON%" -m ${tool}.server %*
-) else (
-    python -m ${tool}.server %*
-)
+set "PY=%BUNDLE_DIR%\deps\runtimes\python\python.exe"
+if not exist "%PY%" set "PY="
+if not defined PY goto :pylauncher
+"%PY%" -c "import fastmcp" >nul 2>nul
+if errorlevel 1 goto :pylauncher
+"%PY%" -m ${tool}.server %*
+goto :done
+:pylauncher
+where py >nul 2>nul
+if errorlevel 1 goto :plainpython
+py -3 -c "import fastmcp" >nul 2>nul
+if errorlevel 1 goto :plainpython
+py -3 -m ${tool}.server %*
+goto :done
+:plainpython
+python -m ${tool}.server %*
+:done
 endlocal
 CMDEOF
   done
@@ -572,7 +585,7 @@ cat > "$BIN_DIR/pdf-reader.cmd" << 'CMDEOF'
 @echo off
 setlocal
 set "BUNDLE_DIR=%~dp0.."
-set "NODEJS=%BUNDLE_DIR%\nodejs\node.exe"
+set "NODEJS=%BUNDLE_DIR%\deps\runtimes\nodejs\node.exe"
 set "TOOL=%BUNDLE_DIR%\deps\npm\node_modules\@sylphx\pdf-reader-mcp\dist\index.js"
 
 if exist "%NODEJS%" (
@@ -587,7 +600,7 @@ cat > "$BIN_DIR/pdf-toolkit.cmd" << 'CMDEOF'
 @echo off
 setlocal
 set "BUNDLE_DIR=%~dp0.."
-set "NODEJS=%BUNDLE_DIR%\nodejs\node.exe"
+set "NODEJS=%BUNDLE_DIR%\deps\runtimes\nodejs\node.exe"
 set "TOOL=%BUNDLE_DIR%\tools\pdf-toolkit-mcp\dist\index.js"
 
 if exist "%NODEJS%" (
