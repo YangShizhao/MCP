@@ -13,6 +13,7 @@ CONFIGURE_CLAUDE=true
 CONFIGURE_CLINE=true
 CONFIGURE_CODEX=true
 CONFIGURE_DSH=true
+ALLOWLIST_ROOTS_OVERRIDE=""
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; MAGENTA='\033[0;35m'; NC='\033[0m'
 log_info()  { echo -e "${BLUE}[INFO]${NC}  $1"; }
@@ -20,6 +21,31 @@ log_ok()    { echo -e "${GREEN}[OK]${NC}    $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step()  { echo ""; echo -e "${CYAN}>>> $1${NC}"; }
+
+# Office MCP 文件白名单：$HOME（唯一需要隔离的“系统盘”用户空间）+ 其它挂载的存储介质。
+# /mnt、/media、/run/media、/Volumes 是 Linux/macOS 上“其它盘符”的惯用位置。
+# 结果是一个逗号分隔的字符串（excelmcp 的 CSV 导出白名单要求分号，见 DSH 段）。
+detect_allowlist_roots() {
+  if [ -n "$ALLOWLIST_ROOTS_OVERRIDE" ]; then
+    printf '%s' "$ALLOWLIST_ROOTS_OVERRIDE"
+    return 0
+  fi
+  local roots="$HOME" target
+  # df -P 是 POSIX 输出格式；挂载点可能含空格，所以取第 6 列起的整段。
+  while IFS= read -r target; do
+    case "$target" in
+      /mnt/*|/media/*|/run/media/*|/Volumes/*) ;;
+      *) continue ;;
+    esac
+    case ",$roots," in
+      *",$target,"*) ;;
+      *) roots="$roots,$target" ;;
+    esac
+  done <<DFEOF
+$(df -P 2>/dev/null | awk 'NR > 1 { $1=""; $2=""; $3=""; $4=""; $5=""; sub(/^[ \t]+/, ""); print }')
+DFEOF
+  printf '%s' "$roots"
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,7 +55,8 @@ while [[ $# -gt 0 ]]; do
     --no-cline) CONFIGURE_CLINE=false; shift ;;
     --no-codex) CONFIGURE_CODEX=false; shift ;;
     --no-dsh) CONFIGURE_DSH=false; shift ;;
-    --help|-h) echo "Usage: bash install.sh [options]"; echo "  --target <path>  Install path (default: $HOME/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; echo "  --no-cline       Skip Cline config"; echo "  --no-codex       Skip Codex config"; echo "  --no-dsh         Skip DeepSeek Harness config"; exit 0 ;;
+    --allowlist-roots) ALLOWLIST_ROOTS_OVERRIDE="$2"; shift 2 ;;
+    --help|-h) echo "Usage: bash install.sh [options]"; echo "  --target <path>  Install path (default: $HOME/mcp-tools)"; echo "  --no-path        Skip PATH config"; echo "  --no-claude      Skip Claude Code config"; echo "  --no-cline       Skip Cline config"; echo "  --no-codex       Skip Codex config"; echo "  --no-dsh         Skip DeepSeek Harness config"; echo "  --allowlist-roots <list>"; echo "                   Office 文件白名单（逗号分隔；默认 \$HOME + /mnt、/media、/run/media、/Volumes 下的挂载点）"; exit 0 ;;
     *) log_error "Unknown: $1"; exit 1 ;;
   esac
 done
@@ -39,6 +66,9 @@ echo -e "${MAGENTA}==============================================${NC}"
 echo -e "${MAGENTA}|     MCP Tools - Offline Installer (Unix)     |${NC}"
 echo -e "${MAGENTA}==============================================${NC}"
 echo ""
+
+ALLOW_ROOTS="$(detect_allowlist_roots)"
+log_info "Office allowlist roots: $ALLOW_ROOTS"
 
 # ---- 1. Locate bundle ----
 log_step "1/6 Checking bundle..."
@@ -224,9 +254,9 @@ cfg = {}
 try:
     with open('$CCFG') as f: cfg = json.load(f)
 except: pass
-cfg['mcpServers']['word'] = {'command': '$TARGET_PATH/bin/wordmcp.sh', 'env': {'WORD_ALLOWLIST_ROOTS': '/home', 'WORD_ENABLE_WRITE': 'true'}, 'description': 'Word docs - 51 tools'}
-cfg['mcpServers']['ppt'] = {'command': '$TARGET_PATH/bin/pptmcp.sh', 'env': {'PPT_ALLOWLIST_ROOTS': '/home', 'PPT_ENABLE_WRITE': 'true'}, 'description': 'PowerPoint - 48 tools'}
-cfg['mcpServers']['excel'] = {'command': '$TARGET_PATH/bin/excelmcp.sh', 'env': {'EXCEL_ALLOWLIST_ROOTS': '/home', 'EXCEL_ENABLE_WRITE': 'true'}, 'description': 'Excel - 65 tools'}
+cfg['mcpServers']['word'] = {'command': '$TARGET_PATH/bin/wordmcp.sh', 'env': {'WORD_ALLOWLIST_ROOTS': '$ALLOW_ROOTS', 'WORD_ENABLE_WRITE': 'true'}, 'description': 'Word docs - 51 tools'}
+cfg['mcpServers']['ppt'] = {'command': '$TARGET_PATH/bin/pptmcp.sh', 'env': {'PPT_ALLOWLIST_ROOTS': '$ALLOW_ROOTS', 'PPT_ENABLE_WRITE': 'true'}, 'description': 'PowerPoint - 48 tools'}
+cfg['mcpServers']['excel'] = {'command': '$TARGET_PATH/bin/excelmcp.sh', 'env': {'EXCEL_ALLOWLIST_ROOTS': '$ALLOW_ROOTS', 'EXCEL_EXPORT_ROOTS': '$ALLOW_ROOTS', 'EXCEL_CSV_EXPORT_ROOTS': '$ALLOW_ROOTS'.replace(',', ';'), 'EXCEL_ENABLE_WRITE': 'true'}, 'description': 'Excel - 65 tools'}
 with open('$CCFG', 'w') as f: json.dump(cfg, f, indent=2); f.write('\n')
 " 2>/dev/null
   fi
@@ -263,9 +293,9 @@ env = { $envline }"
     add_codex_server "pdf-toolkit" "$TARGET_PATH/bin/pdf-toolkit.sh" ""
   fi
   if $HAS_OFFICE && [ -n "$PYTHON_EXE" ]; then
-    add_codex_server "word"  "$TARGET_PATH/bin/wordmcp.sh"  "WORD_ALLOWLIST_ROOTS = \"$HOME\", WORD_ENABLE_WRITE = \"true\""
-    add_codex_server "ppt"   "$TARGET_PATH/bin/pptmcp.sh"   "PPT_ALLOWLIST_ROOTS = \"$HOME\", PPT_ENABLE_WRITE = \"true\""
-    add_codex_server "excel" "$TARGET_PATH/bin/excelmcp.sh" "EXCEL_ALLOWLIST_ROOTS = \"$HOME\", EXCEL_ENABLE_WRITE = \"true\""
+    add_codex_server "word"  "$TARGET_PATH/bin/wordmcp.sh"  "WORD_ALLOWLIST_ROOTS = \"$ALLOW_ROOTS\", WORD_ENABLE_WRITE = \"true\""
+    add_codex_server "ppt"   "$TARGET_PATH/bin/pptmcp.sh"   "PPT_ALLOWLIST_ROOTS = \"$ALLOW_ROOTS\", PPT_ENABLE_WRITE = \"true\""
+    add_codex_server "excel" "$TARGET_PATH/bin/excelmcp.sh" "EXCEL_ALLOWLIST_ROOTS = \"$ALLOW_ROOTS\", EXCEL_EXPORT_ROOTS = \"$ALLOW_ROOTS\", EXCEL_CSV_EXPORT_ROOTS = \"${ALLOW_ROOTS//,/;}\", EXCEL_ENABLE_WRITE = \"true\""
   fi
 
   if [ "$NEW_COUNT" -gt 0 ]; then
@@ -291,7 +321,7 @@ if $CONFIGURE_DSH; then
   mkdir -p "$DSH_HOME_DIR" 2>/dev/null || true
   [ -f "$DSH_PATCH" ] && cp "$DSH_PATCH" "$DSH_PATCH.bak" 2>/dev/null || true
 
-  DSH_ADDED=$(DSH_PATCH="$DSH_PATCH" TARGET_PATH="$TARGET_PATH" HOME_DIR="$HOME" \
+  DSH_ADDED=$(DSH_PATCH="$DSH_PATCH" TARGET_PATH="$TARGET_PATH" HOME_DIR="$HOME" ALLOW_ROOTS="$ALLOW_ROOTS" \
     HAS_PDF="$HAS_PDF" HAS_OFFICE="$HAS_OFFICE" OFFICE_OK="$( [ -n "$PYTHON_EXE" ] && echo true || echo false )" \
     python3 - <<'DSHPY'
 import os, re, sys
@@ -299,6 +329,7 @@ import os, re, sys
 patch = os.environ["DSH_PATCH"]
 target = os.environ["TARGET_PATH"]
 home = os.environ["HOME_DIR"]
+allow = os.environ["ALLOW_ROOTS"]
 has_pdf = os.environ["HAS_PDF"] == "true"
 has_office = os.environ["HAS_OFFICE"] == "true" and os.environ["OFFICE_OK"] == "true"
 
@@ -311,11 +342,12 @@ if has_pdf:
 if has_office:
     SERVERS += [
         ("word", "Word docs - 51 tools",
-         {"WORD_ALLOWLIST_ROOTS": home, "WORD_ENABLE_WRITE": "true"}),
+         {"WORD_ALLOWLIST_ROOTS": allow, "WORD_ENABLE_WRITE": "true"}),
         ("ppt", "PowerPoint - 48 tools",
-         {"PPT_ALLOWLIST_ROOTS": home, "PPT_ENABLE_WRITE": "true"}),
+         {"PPT_ALLOWLIST_ROOTS": allow, "PPT_ENABLE_WRITE": "true"}),
         ("excel", "Excel - 65 tools",
-         {"EXCEL_ALLOWLIST_ROOTS": home, "EXCEL_ENABLE_WRITE": "true"}),
+         {"EXCEL_ALLOWLIST_ROOTS": allow, "EXCEL_EXPORT_ROOTS": allow,
+          "EXCEL_CSV_EXPORT_ROOTS": allow.replace(",", ";"), "EXCEL_ENABLE_WRITE": "true"}),
     ]
 
 try:

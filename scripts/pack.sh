@@ -718,17 +718,17 @@ if ! $SKIP_OFFICE; then
   "mcpServers": {
     "word": {
       "command": "${INSTALL_BASE}\\\\bin\\\\wordmcp.cmd",
-      "env": { "WORD_ALLOWLIST_ROOTS": "C:\\\\Users\\\\%USERNAME%\\\\Documents", "WORD_ENABLE_WRITE": "true" },
+      "env": { "WORD_ALLOWLIST_ROOTS": "C:\\\\Users\\\\<用户名>,D:\\\\", "WORD_ENABLE_WRITE": "true" },
       "description": "Word 文档处理 — 51 个工具覆盖文档创建、模板组装、修订跟踪、结构 QA"
     },
     "ppt": {
       "command": "${INSTALL_BASE}\\\\bin\\\\pptmcp.cmd",
-      "env": { "PPT_ALLOWLIST_ROOTS": "C:\\\\Users\\\\%USERNAME%\\\\Documents", "PPT_ENABLE_WRITE": "true" },
+      "env": { "PPT_ALLOWLIST_ROOTS": "C:\\\\Users\\\\<用户名>,D:\\\\", "PPT_ENABLE_WRITE": "true" },
       "description": "PowerPoint 演示文稿 — 48 个工具含 Output Contract 框架"
     },
     "excel": {
       "command": "${INSTALL_BASE}\\\\bin\\\\excelmcp.cmd",
-      "env": { "EXCEL_ALLOWLIST_ROOTS": "C:\\\\Users\\\\%USERNAME%\\\\Documents", "EXCEL_ENABLE_WRITE": "true" },
+      "env": { "EXCEL_ALLOWLIST_ROOTS": "C:\\\\Users\\\\<用户名>,D:\\\\", "EXCEL_ENABLE_WRITE": "true" },
       "description": "Excel 电子表格 — 65 个工具覆盖公式、图表、数据透视表"
     }
   }
@@ -741,15 +741,15 @@ CFGEOF
   "mcpServers": {
     "word": {
       "command": "/opt/mcp-tools/bin/wordmcp.sh",
-      "env": { "WORD_ALLOWLIST_ROOTS": "/home", "WORD_ENABLE_WRITE": "true" }
+      "env": { "WORD_ALLOWLIST_ROOTS": "/home/<用户名>,/mnt/data", "WORD_ENABLE_WRITE": "true" }
     },
     "ppt": {
       "command": "/opt/mcp-tools/bin/pptmcp.sh",
-      "env": { "PPT_ALLOWLIST_ROOTS": "/home", "PPT_ENABLE_WRITE": "true" }
+      "env": { "PPT_ALLOWLIST_ROOTS": "/home/<用户名>,/mnt/data", "PPT_ENABLE_WRITE": "true" }
     },
     "excel": {
       "command": "/opt/mcp-tools/bin/excelmcp.sh",
-      "env": { "EXCEL_ALLOWLIST_ROOTS": "/home", "EXCEL_ENABLE_WRITE": "true" }
+      "env": { "EXCEL_ALLOWLIST_ROOTS": "/home/<用户名>,/mnt/data", "EXCEL_ENABLE_WRITE": "true" }
     }
   }
 }
@@ -771,17 +771,17 @@ if ! $SKIP_PDF && ! $SKIP_OFFICE; then
     },
     "word": {
       "command": "${INSTALL_BASE}\\\\bin\\\\wordmcp.cmd",
-      "env": { "WORD_ALLOWLIST_ROOTS": "C:\\\\Users\\\\%USERNAME%\\\\Documents", "WORD_ENABLE_WRITE": "true" },
+      "env": { "WORD_ALLOWLIST_ROOTS": "C:\\\\Users\\\\<用户名>,D:\\\\", "WORD_ENABLE_WRITE": "true" },
       "description": "Word 文档处理 — 51 个工具"
     },
     "ppt": {
       "command": "${INSTALL_BASE}\\\\bin\\\\pptmcp.cmd",
-      "env": { "PPT_ALLOWLIST_ROOTS": "C:\\\\Users\\\\%USERNAME%\\\\Documents", "PPT_ENABLE_WRITE": "true" },
+      "env": { "PPT_ALLOWLIST_ROOTS": "C:\\\\Users\\\\<用户名>,D:\\\\", "PPT_ENABLE_WRITE": "true" },
       "description": "PowerPoint 演示文稿 — 48 个工具"
     },
     "excel": {
       "command": "${INSTALL_BASE}\\\\bin\\\\excelmcp.cmd",
-      "env": { "EXCEL_ALLOWLIST_ROOTS": "C:\\\\Users\\\\%USERNAME%\\\\Documents", "EXCEL_ENABLE_WRITE": "true" },
+      "env": { "EXCEL_ALLOWLIST_ROOTS": "C:\\\\Users\\\\<用户名>,D:\\\\", "EXCEL_ENABLE_WRITE": "true" },
       "description": "Excel 电子表格 — 65 个工具"
     }
   }
@@ -848,22 +848,22 @@ if ! $SKIP_PDF; then
 fi
 if ! $SKIP_OFFICE; then
   # YAML 单引号标量：反斜杠无需转义
-  DSH_ENV_WORD="          WORD_ALLOWLIST_ROOTS: 'C:\\Users\\%USERNAME%\\Documents'
+  DSH_ENV_WORD="          WORD_ALLOWLIST_ROOTS: 'C:\\Users\\<用户名>,D:\\'
           WORD_ENABLE_WRITE: \"true\"
 "
-  DSH_ENV_PPT="          PPT_ALLOWLIST_ROOTS: 'C:\\Users\\%USERNAME%\\Documents'
+  DSH_ENV_PPT="          PPT_ALLOWLIST_ROOTS: 'C:\\Users\\<用户名>,D:\\'
           PPT_ENABLE_WRITE: \"true\"
 "
-  DSH_ENV_EXCEL="          EXCEL_ALLOWLIST_ROOTS: 'C:\\Users\\%USERNAME%\\Documents'
+  DSH_ENV_EXCEL="          EXCEL_ALLOWLIST_ROOTS: 'C:\\Users\\<用户名>,D:\\'
           EXCEL_ENABLE_WRITE: \"true\"
 "
-  DSH_UNIX_ENV_WORD='          WORD_ALLOWLIST_ROOTS: "/home"
+  DSH_UNIX_ENV_WORD='          WORD_ALLOWLIST_ROOTS: "/home/<用户名>,/mnt/data"
           WORD_ENABLE_WRITE: "true"
 '
-  DSH_UNIX_ENV_PPT='          PPT_ALLOWLIST_ROOTS: "/home"
+  DSH_UNIX_ENV_PPT='          PPT_ALLOWLIST_ROOTS: "/home/<用户名>,/mnt/data"
           PPT_ENABLE_WRITE: "true"
 '
-  DSH_UNIX_ENV_EXCEL='          EXCEL_ALLOWLIST_ROOTS: "/home"
+  DSH_UNIX_ENV_EXCEL='          EXCEL_ALLOWLIST_ROOTS: "/home/<用户名>,/mnt/data"
           EXCEL_ENABLE_WRITE: "true"
 '
   dsh_block "word" "wordmcp" "Word 文档处理 — 51 个工具" "$DSH_ENV_WORD" >> "$CONFIG_DIR/dsh-mcp-rows.txt"

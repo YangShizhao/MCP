@@ -4,7 +4,7 @@
       "command": "python",
       "args": ["-m", "wordmcp.server"],
       "env": {
-        "WORD_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "WORD_ALLOWLIST_ROOTS": "C:\\Users\\<用户名>,D:\\",
         "WORD_ENABLE_WRITE": "true"
       }
     }

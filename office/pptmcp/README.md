@@ -119,12 +119,12 @@ dsh 不读取 `mcpServers` JSON，而是从 `~/.dsh/cordis.patch.yml`（Windows 
           - '-m'
           - pptmcp.server
         env:
-          PPT_ALLOWLIST_ROOTS: '/home'
+          PPT_ALLOWLIST_ROOTS: '/home/<用户名>,/mnt/data'
           PPT_ENABLE_WRITE: 'true'
         # PowerPoint 演示文稿处理 — 48 个工具含 Output Contract 框架
 ```
 
-请按需修改 `PPT_ALLOWLIST_ROOTS` 等环境变量。离线安装包中的 `scripts/install.sh` / `scripts/install.ps1` 会自动写入该配置（幂等，不会覆盖已有行），完整模板见 `config/dsh.yml`。
+请按需修改 `PPT_ALLOWLIST_ROOTS` 等环境变量（多个根用**逗号**分隔）。离线安装包中的 `scripts/install.sh` / `scripts/install.ps1` 会自动写入该配置（幂等，不会覆盖已有行）：Windows 取「C 盘用户空间 + 其它固定/可移动盘整盘」，Unix 取「`$HOME` + `/mnt`、`/media`、`/run/media`、`/Volumes` 下的挂载点」，也可用 `-AllowlistRoots`（Windows）/ `--allowlist-roots`（Unix）覆盖。完整模板见 `config/dsh.yml`。
 
 ### 环境变量
 

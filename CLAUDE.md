@@ -145,9 +145,14 @@ dsh 不使用 `mcpServers` 映射，而是在 `$DSH_HOME/cordis.patch.yml`
 - 已存在的 `- id: mcp-<name>` 行不得覆盖（用户自定义优先）
 - Windows 下 stdio 启动器为 `.cmd`，需写成 `command: cmd` + `args: [/d, /s, /c, '<路径>']`
 - 安装脚本 `scripts/install.sh` / `scripts/install.ps1` 会自动合并该配置
-- **白名单规则**（`install.ps1` 安装时自动探测，见 `Get-AllowlistRoots`）：C 盘只放开当前用户空间
-  （`$env:USERPROFILE`，唯一需要隔离的盘符），**其余所有就绪的固定盘 / 可移动盘整盘加入**；
-  需要收紧时用 `-AllowlistRoots "C:\Users\me,D:\"` 手工覆盖。本机探测结果：`C:\Users\yshzh,D:\`。
+- **白名单规则**（安装时自动探测）：Windows 见 `install.ps1` 的 `Get-AllowlistRoots`——取「C 盘当前
+  用户空间（`$env:USERPROFILE`，唯一需要隔离的盘符）+ 其余所有就绪的固定 / 可移动盘整盘」，
+  用 `-AllowlistRoots "C:\Users\me,D:\"` 可覆盖；Unix 见 `install.sh` 的 `detect_allowlist_roots`——取
+  「`$HOME` + `/mnt`、`/media`、`/run/media`、`/Volumes` 下的挂载点」，用 `--allowlist-roots` 可覆盖
+  （不在这些惯用位置的挂载点需手工加）。本机 Windows 探测结果：`C:\Users\yshzh,D:\`。
+- 手工复制的模板（`office/*/config/*`）里写的是 `<用户名>`、`D:\`、`/mnt/data` 这类**占位符**：
+  环境变量的值不会被 shell 展开，必须替换成真实路径（否则会报 `Path not in allowlist`）；
+  用安装脚本则自动写入按目标机器探测出的值。
 - 多个根用**逗号**分隔，路径 `resolve()` 后按前缀判定。该白名单同时约束**读取**：不在其中的
   文件一律报 `Path not in allowlist`，所以处理任何文档前先确认它落在白名单内。
   Excel 另有 `EXCEL_EXPORT_ROOTS`（**逗号**）与 `EXCEL_CSV_EXPORT_ROOTS`（**分号**）约束导出

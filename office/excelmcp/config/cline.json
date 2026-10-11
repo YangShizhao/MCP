@@ -4,7 +4,7 @@
       "command": "python",
       "args": ["-m", "excelmcp.server"],
       "env": {
-        "EXCEL_ALLOWLIST_ROOTS": "C:\\Users\\%USERNAME%\\Documents",
+        "EXCEL_ALLOWLIST_ROOTS": "C:\\Users\\<用户名>,D:\\",
         "EXCEL_ENABLE_WRITE": "true"
       }
     }

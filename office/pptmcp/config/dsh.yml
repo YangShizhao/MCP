@@ -8,6 +8,8 @@
 #
 # 离线安装包（install.sh / install.ps1）会自动写入该配置，并改用
 # bin/pptmcp.cmd（Windows）或 bin/pptmcp.sh（Linux/Mac）启动器。
+# 白名单：Windows 为「C 盘用户空间 + 其它盘符」，Unix 为「$HOME + 其它挂载点」
+# （/mnt、/media、/run/media、/Volumes）；下方值里的占位符需替换为实际路径。
 - insert:
     - id: mcp-ppt
       name: '@deepseek-ai/dsh-mcp-client'
@@ -19,6 +21,6 @@
           - '-m'
           - pptmcp.server
         env:
-          PPT_ALLOWLIST_ROOTS: '/home'
+          PPT_ALLOWLIST_ROOTS: '/home/<用户名>,/mnt/data'
           PPT_ENABLE_WRITE: 'true'
         # PowerPoint 演示文稿处理 — 48 个工具含 Output Contract 框架

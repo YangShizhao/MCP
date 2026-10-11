@@ -8,6 +8,8 @@
 #
 # 离线安装包（install.sh / install.ps1）会自动写入该配置，并改用
 # bin/excelmcp.cmd（Windows）或 bin/excelmcp.sh（Linux/Mac）启动器。
+# 白名单：Windows 为「C 盘用户空间 + 其它盘符」，Unix 为「$HOME + 其它挂载点」
+# （/mnt、/media、/run/media、/Volumes）；下方值里的占位符需替换为实际路径。
 - insert:
     - id: mcp-excel
       name: '@deepseek-ai/dsh-mcp-client'
@@ -19,6 +21,6 @@
           - '-m'
           - excelmcp.server
         env:
-          EXCEL_ALLOWLIST_ROOTS: '/home'
+          EXCEL_ALLOWLIST_ROOTS: '/home/<用户名>,/mnt/data'
           EXCEL_ENABLE_WRITE: 'true'
         # Excel 电子表格处理 — 65 个工具覆盖公式、图表、数据透视表

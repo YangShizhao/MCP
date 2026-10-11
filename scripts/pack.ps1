@@ -279,9 +279,9 @@ if(!$SkipPdf){
 
 if(!$SkipOffice){
   $o=@{
-    "word"=@{command="$IB\bin\wordmcp.cmd";env=@{WORD_ALLOWLIST_ROOTS="C:\Users\%USERNAME%\Documents";WORD_ENABLE_WRITE="true"};description="Word docs - 51 tools"}
-    "ppt"=@{command="$IB\bin\pptmcp.cmd";env=@{PPT_ALLOWLIST_ROOTS="C:\Users\%USERNAME%\Documents";PPT_ENABLE_WRITE="true"};description="PowerPoint - 48 tools"}
-    "excel"=@{command="$IB\bin\excelmcp.cmd";env=@{EXCEL_ALLOWLIST_ROOTS="C:\Users\%USERNAME%\Documents";EXCEL_ENABLE_WRITE="true"};description="Excel - 65 tools"}
+    "word"=@{command="$IB\bin\wordmcp.cmd";env=@{WORD_ALLOWLIST_ROOTS="C:\Users\<用户名>,D:\";WORD_ENABLE_WRITE="true"};description="Word docs - 51 tools"}
+    "ppt"=@{command="$IB\bin\pptmcp.cmd";env=@{PPT_ALLOWLIST_ROOTS="C:\Users\<用户名>,D:\";PPT_ENABLE_WRITE="true"};description="PowerPoint - 48 tools"}
+    "excel"=@{command="$IB\bin\excelmcp.cmd";env=@{EXCEL_ALLOWLIST_ROOTS="C:\Users\<用户名>,D:\";EXCEL_ENABLE_WRITE="true"};description="Excel - 65 tools"}
   }
   @{mcpServers=$o}|ConvertTo-Json -Depth 5|Set-Content "$cfg\claude-code-office.json"
   if(!$SkipPdf){
@@ -360,13 +360,13 @@ if (!$SkipPdf) {
     $dshUnixRows += New-DshTemplateRow -ServerName "pdf-toolkit" -Launcher "pdf-toolkit" -Note "PDF 创建、编辑、合并拆分、水印、表单、加密" -LauncherDir "/opt/mcp-tools/bin"
 }
 if (!$SkipOffice) {
-    $docs = "C:\Users\%USERNAME%\Documents"
+    $docs = "C:\Users\<用户名>,D:\"
     $dshRows += New-DshTemplateRow -ServerName "word"  -Launcher "wordmcp"  -Note "Word 文档处理 — 51 个工具" -LauncherDir "$IB\bin" -EnvVars @{ WORD_ALLOWLIST_ROOTS = "'$docs'"; WORD_ENABLE_WRITE = '"true"' }
     $dshRows += New-DshTemplateRow -ServerName "ppt"   -Launcher "pptmcp"   -Note "PowerPoint 演示文稿 — 48 个工具" -LauncherDir "$IB\bin" -EnvVars @{ PPT_ALLOWLIST_ROOTS = "'$docs'"; PPT_ENABLE_WRITE = '"true"' }
     $dshRows += New-DshTemplateRow -ServerName "excel" -Launcher "excelmcp" -Note "Excel 电子表格 — 65 个工具" -LauncherDir "$IB\bin" -EnvVars @{ EXCEL_ALLOWLIST_ROOTS = "'$docs'"; EXCEL_ENABLE_WRITE = '"true"' }
-    $dshUnixRows += New-DshTemplateRow -ServerName "word"  -Launcher "wordmcp"  -Note "Word 文档处理 — 51 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ WORD_ALLOWLIST_ROOTS = '"/home"'; WORD_ENABLE_WRITE = '"true"' }
-    $dshUnixRows += New-DshTemplateRow -ServerName "ppt"   -Launcher "pptmcp"   -Note "PowerPoint 演示文稿 — 48 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ PPT_ALLOWLIST_ROOTS = '"/home"'; PPT_ENABLE_WRITE = '"true"' }
-    $dshUnixRows += New-DshTemplateRow -ServerName "excel" -Launcher "excelmcp" -Note "Excel 电子表格 — 65 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ EXCEL_ALLOWLIST_ROOTS = '"/home"'; EXCEL_ENABLE_WRITE = '"true"' }
+    $dshUnixRows += New-DshTemplateRow -ServerName "word"  -Launcher "wordmcp"  -Note "Word 文档处理 — 51 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ WORD_ALLOWLIST_ROOTS = '"/home/<用户名>,/mnt/data"'; WORD_ENABLE_WRITE = '"true"' }
+    $dshUnixRows += New-DshTemplateRow -ServerName "ppt"   -Launcher "pptmcp"   -Note "PowerPoint 演示文稿 — 48 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ PPT_ALLOWLIST_ROOTS = '"/home/<用户名>,/mnt/data"'; PPT_ENABLE_WRITE = '"true"' }
+    $dshUnixRows += New-DshTemplateRow -ServerName "excel" -Launcher "excelmcp" -Note "Excel 电子表格 — 65 个工具" -LauncherDir "/opt/mcp-tools/bin" -EnvVars @{ EXCEL_ALLOWLIST_ROOTS = '"/home/<用户名>,/mnt/data"'; EXCEL_ENABLE_WRITE = '"true"' }
 }
 
 if ($dshRows) {
