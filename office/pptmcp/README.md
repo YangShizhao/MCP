@@ -130,8 +130,11 @@ dsh 不读取 `mcpServers` JSON，而是从 `~/.dsh/cordis.patch.yml`（Windows 
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `PPT_ALLOWLIST_ROOTS` | 允许访问的文件根目录（分号分隔） | — |
+| `PPT_ALLOWLIST_ROOTS` | 允许读写的文件根目录（**逗号**分隔，路径 `resolve()` 后按前缀判定；**读取同样受限**） | — |
 | `PPT_ENABLE_WRITE` | 启用写操作 | `false` |
+| `PPT_ENABLE_COM` | 启用 COM 功能（导出 PNG/PDF、图表重算、放映），需 Windows + MS PowerPoint + pywin32 | `false` |
+
+> COM 工具会接管**正在运行的** PowerPoint 实例并在结束时将其退出，调用前请先保存并关闭 PowerPoint。
 
 ## 参考链接
 

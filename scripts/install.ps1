@@ -16,11 +16,16 @@
     Auto-configure Codex CLI MCP settings in ~/.codex/config.toml (default: $true)
 .PARAMETER ConfigureDsh
     Auto-configure DeepSeek Harness MCP settings in ~/.dsh/cordis.patch.yml (default: $true)
+.PARAMETER AllowlistRoots
+    Comma-separated directories the Office MCP servers may read and write.
+    Default: the current user profile on C: (the only drive that needs isolation)
+    plus every other ready fixed or removable drive, detected at install time.
 .EXAMPLE
     .\install.ps1
     .\install.ps1 -TargetPath "D:\Tools\MCP"
     .\install.ps1 -ConfigureCodex $false
     .\install.ps1 -ConfigureDsh $false
+    .\install.ps1 -AllowlistRoots "C:\Users\me,D:\"
 #>
 
 param(
@@ -29,7 +34,8 @@ param(
     [bool]$ConfigureClaudeCode = $true,
     [bool]$ConfigureCline = $true,
     [bool]$ConfigureCodex = $true,
-    [bool]$ConfigureDsh = $true
+    [bool]$ConfigureDsh = $true,
+    [string]$AllowlistRoots = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -118,6 +124,33 @@ function Resolve-PythonInterpreter {
         if ($src -and $src -notlike "*\WindowsApps\*") { return $src }
     }
     return $null
+}
+
+# Allowlist roots for the Office MCP servers. C: is the only drive that needs
+# isolation, so its boundary is the current user profile; every other ready
+# fixed or removable drive is allowed whole, because documents commonly live on
+# a data drive. Detected per machine at install time; -AllowlistRoots overrides.
+function Get-AllowlistRoots {
+    param([string]$Override = "")
+    if ($Override) {
+        return @($Override.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+    $roots = @()
+    if ($env:USERPROFILE) { $roots += $env:USERPROFILE }
+    try {
+        $C_Drive = "C:" + [char]92
+        foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
+            # Drive roots keep their trailing backslash: "D:" on its own is a
+            # drive-relative path and would resolve against the process CWD.
+            if (-not $drive.IsReady) { continue }
+            if ($drive.Name -eq $C_Drive) { continue }
+            if ($drive.DriveType -ne [System.IO.DriveType]::Fixed -and $drive.DriveType -ne [System.IO.DriveType]::Removable) { continue }
+            $roots += $drive.Name
+        }
+    } catch {
+        # Best-effort detection; the user profile root always remains.
+    }
+    return $roots
 }
 
 Write-Host ""
@@ -336,6 +369,15 @@ if ($HasOfficeTools -and $PythonExe) {
 # ---- 6. Configure AI tools + PATH ----
 Write-Step "5/6 Configuring AI tool MCP settings..."
 
+# The Office MCP servers take their file boundaries from these env vars; compute
+# the list once so every AI tool's config receives the same roots.
+$AllowedRoots = Get-AllowlistRoots -Override $AllowlistRoots
+$AllowedCsv = $AllowedRoots -join ','
+# excelmcp reads EXCEL_CSV_EXPORT_ROOTS semicolon-separated while every other
+# allowlist is comma-separated: same roots, different join.
+$AllowedSemi = $AllowedRoots -join ';'
+Write-Info "Office allowlist roots: $AllowedCsv"
+
 if ($ConfigureClaudeCode) {
     $file = "$env:USERPROFILE\.claude.json"
 
@@ -398,15 +440,15 @@ if ($ConfigureClaudeCode) {
         }
         if ($HasOfficeTools -and $PythonExe) {
             if (-not $cfg.mcpServers."word") {
-                $cfg.mcpServers | Add-Member -Name "word" -Value @{ command = "$TargetPath\bin\wordmcp.cmd"; env = @{ WORD_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; WORD_ENABLE_WRITE = "true" }; description = "Word docs - 51 tools" } -MemberType NoteProperty
+                $cfg.mcpServers | Add-Member -Name "word" -Value @{ command = "$TargetPath\bin\wordmcp.cmd"; env = @{ WORD_ALLOWLIST_ROOTS = $AllowedCsv; WORD_ENABLE_WRITE = "true" }; description = "Word docs - 51 tools" } -MemberType NoteProperty
                 $newCount++
             }
             if (-not $cfg.mcpServers."ppt") {
-                $cfg.mcpServers | Add-Member -Name "ppt" -Value @{ command = "$TargetPath\bin\pptmcp.cmd"; env = @{ PPT_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; PPT_ENABLE_WRITE = "true" }; description = "PowerPoint - 48 tools" } -MemberType NoteProperty
+                $cfg.mcpServers | Add-Member -Name "ppt" -Value @{ command = "$TargetPath\bin\pptmcp.cmd"; env = @{ PPT_ALLOWLIST_ROOTS = $AllowedCsv; PPT_ENABLE_WRITE = "true" }; description = "PowerPoint - 48 tools" } -MemberType NoteProperty
                 $newCount++
             }
             if (-not $cfg.mcpServers."excel") {
-                $cfg.mcpServers | Add-Member -Name "excel" -Value @{ command = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; EXCEL_ENABLE_WRITE = "true" }; description = "Excel - 65 tools" } -MemberType NoteProperty
+                $cfg.mcpServers | Add-Member -Name "excel" -Value @{ command = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $AllowedCsv; EXCEL_EXPORT_ROOTS = $AllowedCsv; EXCEL_CSV_EXPORT_ROOTS = $AllowedSemi; EXCEL_ENABLE_WRITE = "true" }; description = "Excel - 65 tools" } -MemberType NoteProperty
                 $newCount++
             }
         }
@@ -443,9 +485,9 @@ if ($ConfigureCline -and (Test-Path "$env:APPDATA\Code\User")) {
         if (-not $existing."pdf-toolkit") { $existing."pdf-toolkit" = @{ command = "$TargetPath\bin\pdf-toolkit.cmd" }; $newC++ }
     }
     if ($HasOfficeTools -and $PythonExe) {
-        if (-not $existing."word") { $existing."word" = @{ command = "$TargetPath\bin\wordmcp.cmd"; env = @{ WORD_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; WORD_ENABLE_WRITE = "true" } }; $newC++ }
-        if (-not $existing."ppt") { $existing."ppt" = @{ command = "$TargetPath\bin\pptmcp.cmd"; env = @{ PPT_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; PPT_ENABLE_WRITE = "true" } }; $newC++ }
-        if (-not $existing."excel") { $existing."excel" = @{ command = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = "C:\Users\$env:USERNAME\Documents"; EXCEL_ENABLE_WRITE = "true" } }; $newC++ }
+        if (-not $existing."word") { $existing."word" = @{ command = "$TargetPath\bin\wordmcp.cmd"; env = @{ WORD_ALLOWLIST_ROOTS = $AllowedCsv; WORD_ENABLE_WRITE = "true" } }; $newC++ }
+        if (-not $existing."ppt") { $existing."ppt" = @{ command = "$TargetPath\bin\pptmcp.cmd"; env = @{ PPT_ALLOWLIST_ROOTS = $AllowedCsv; PPT_ENABLE_WRITE = "true" } }; $newC++ }
+        if (-not $existing."excel") { $existing."excel" = @{ command = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $AllowedCsv; EXCEL_EXPORT_ROOTS = $AllowedCsv; EXCEL_CSV_EXPORT_ROOTS = $AllowedSemi; EXCEL_ENABLE_WRITE = "true" } }; $newC++ }
     }
     $s | Add-Member -Name "cline.mcpServers" -Value $existing -MemberType NoteProperty -Force
     $s | ConvertTo-Json -Depth 5 | Set-Content $sfile
@@ -466,10 +508,9 @@ if ($ConfigureCodex) {
         $codexServers += @{ name = "pdf-toolkit"; cmd = "$TargetPath\bin\pdf-toolkit.cmd"; env = @{} }
     }
     if ($HasOfficeTools -and $PythonExe) {
-        $docs = "C:\Users\$env:USERNAME\Documents"
-        $codexServers += @{ name = "word";  cmd = "$TargetPath\bin\wordmcp.cmd";  env = @{ WORD_ALLOWLIST_ROOTS = $docs;  WORD_ENABLE_WRITE = "true" } }
-        $codexServers += @{ name = "ppt";   cmd = "$TargetPath\bin\pptmcp.cmd";   env = @{ PPT_ALLOWLIST_ROOTS = $docs;   PPT_ENABLE_WRITE = "true" } }
-        $codexServers += @{ name = "excel"; cmd = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $docs; EXCEL_ENABLE_WRITE = "true" } }
+        $codexServers += @{ name = "word";  cmd = "$TargetPath\bin\wordmcp.cmd";  env = @{ WORD_ALLOWLIST_ROOTS = $AllowedCsv;  WORD_ENABLE_WRITE = "true" } }
+        $codexServers += @{ name = "ppt";   cmd = "$TargetPath\bin\pptmcp.cmd";   env = @{ PPT_ALLOWLIST_ROOTS = $AllowedCsv;   PPT_ENABLE_WRITE = "true" } }
+        $codexServers += @{ name = "excel"; cmd = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $AllowedCsv; EXCEL_EXPORT_ROOTS = $AllowedCsv; EXCEL_CSV_EXPORT_ROOTS = $AllowedSemi; EXCEL_ENABLE_WRITE = "true" } }
     }
 
     if ($codexServers.Count -eq 0) {
@@ -527,10 +568,9 @@ if ($ConfigureDsh) {
         $dshServers["pdf-toolkit"] = @{ cmd = "$TargetPath\bin\pdf-toolkit.cmd"; env = @{}; note = "PDF create, edit, merge, split, forms, encrypt" }
     }
     if ($HasOfficeTools -and $PythonExe) {
-        $docs = "C:\Users\$env:USERNAME\Documents"
-        $dshServers["word"]  = @{ cmd = "$TargetPath\bin\wordmcp.cmd";  env = @{ WORD_ALLOWLIST_ROOTS = $docs;  WORD_ENABLE_WRITE = "true" };  note = "Word docs - 51 tools" }
-        $dshServers["ppt"]   = @{ cmd = "$TargetPath\bin\pptmcp.cmd";   env = @{ PPT_ALLOWLIST_ROOTS = $docs;   PPT_ENABLE_WRITE = "true" };   note = "PowerPoint - 48 tools" }
-        $dshServers["excel"] = @{ cmd = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $docs; EXCEL_ENABLE_WRITE = "true" }; note = "Excel - 65 tools" }
+        $dshServers["word"]  = @{ cmd = "$TargetPath\bin\wordmcp.cmd";  env = @{ WORD_ALLOWLIST_ROOTS = $AllowedCsv;  WORD_ENABLE_WRITE = "true" };  note = "Word docs - 51 tools" }
+        $dshServers["ppt"]   = @{ cmd = "$TargetPath\bin\pptmcp.cmd";   env = @{ PPT_ALLOWLIST_ROOTS = $AllowedCsv;   PPT_ENABLE_WRITE = "true" };   note = "PowerPoint - 48 tools" }
+        $dshServers["excel"] = @{ cmd = "$TargetPath\bin\excelmcp.cmd"; env = @{ EXCEL_ALLOWLIST_ROOTS = $AllowedCsv; EXCEL_EXPORT_ROOTS = $AllowedCsv; EXCEL_CSV_EXPORT_ROOTS = $AllowedSemi; EXCEL_ENABLE_WRITE = "true" }; note = "Excel - 65 tools" }
     }
 
     if ($dshServers.Count -eq 0) {

@@ -121,8 +121,11 @@ dsh 不读取 `mcpServers` JSON，而是从 `~/.dsh/cordis.patch.yml`（Windows 
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `WORD_ALLOWLIST_ROOTS` | 允许访问的文件根目录（分号分隔） | — |
+| `WORD_ALLOWLIST_ROOTS` | 允许读写的文件根目录（**逗号**分隔，路径 `resolve()` 后按前缀判定；**读取同样受限**，不在其中会报 `Path not in allowlist`） | — |
 | `WORD_ENABLE_WRITE` | 启用写操作 | `false` |
+| `WORD_ENABLE_COM` | 启用 COM 功能（真实 Word：导出 PDF/HTML、修订跟踪），需 Windows + MS Word + pywin32 | `false` |
+
+> COM 工具会接管**正在运行的** Word 实例并在结束时将其退出，调用前请先保存并关闭 Word。
 
 ## 安全说明
 

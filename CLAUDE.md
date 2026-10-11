@@ -145,6 +145,35 @@ dsh 不使用 `mcpServers` 映射，而是在 `$DSH_HOME/cordis.patch.yml`
 - 已存在的 `- id: mcp-<name>` 行不得覆盖（用户自定义优先）
 - Windows 下 stdio 启动器为 `.cmd`，需写成 `command: cmd` + `args: [/d, /s, /c, '<路径>']`
 - 安装脚本 `scripts/install.sh` / `scripts/install.ps1` 会自动合并该配置
+- **白名单规则**（`install.ps1` 安装时自动探测，见 `Get-AllowlistRoots`）：C 盘只放开当前用户空间
+  （`$env:USERPROFILE`，唯一需要隔离的盘符），**其余所有就绪的固定盘 / 可移动盘整盘加入**；
+  需要收紧时用 `-AllowlistRoots "C:\Users\me,D:\"` 手工覆盖。本机探测结果：`C:\Users\yshzh,D:\`。
+- 多个根用**逗号**分隔，路径 `resolve()` 后按前缀判定。该白名单同时约束**读取**：不在其中的
+  文件一律报 `Path not in allowlist`，所以处理任何文档前先确认它落在白名单内。
+  Excel 另有 `EXCEL_EXPORT_ROOTS`（**逗号**）与 `EXCEL_CSV_EXPORT_ROOTS`（**分号**）约束导出
+  输出路径，两者语义不同、最容易漏；安装脚本会把这三个变量写成同一份根列表。
+
+### Office COM 功能（调用前必须提醒用户关闭 Office）
+
+`WORD_ENABLE_COM` / `PPT_ENABLE_COM` / `EXCEL_ENABLE_COM` 是 mcp-office 的**显式开关**，
+安装脚本从不写它们（默认关闭）。本机已在 `%USERPROFILE%\.dsh\cordis.patch.yml` 的
+word / ppt / excel 三个条目中设为 `"true"`，并设 `toolCallTimeoutMs: 180000`
+（COM 首次冷启动通常超过默认的 60 秒，届时客户端会先报 `Request timed out`，
+但服务端往往仍在继续并最终成功）。
+
+**提醒义务（重要）**：这些 COM 工具通过 `Dispatch()` 接管**用户正在运行的** Office 实例，
+收尾时 `finally: app.Quit()` 把它一并退出，且 `DisplayAlerts=0`——未保存内容不会有保存提示。
+因此**调用任何 COM 功能前，先提醒用户保存并关闭 Word / PowerPoint / Excel**；
+若对应应用正在运行且可能有未保存内容，先停下来询问用户，不要直接调用。
+检查方式：`Get-Process WINWORD,EXCEL,POWERPNT -ErrorAction SilentlyContinue`。
+
+受管制的典型功能：
+
+| 服务器 | COM 功能 |
+|--------|----------|
+| word | 导出 PDF/HTML（`export`、`export_document`）、修订跟踪（`manage_tracked_changes`）、真实 Word 读取 |
+| ppt | 导出 PNG/PDF（`export`、`export_slide`、`export_deck`）、图表重算（`recalculate_charts`）、放映（`run_slide_show`） |
+| excel | 导出 PDF（`export_as_pdf`）、数据透视表（`pivot_table`）、重算（`recalculate_workbook`）、VBA（`run_macro`）、模板套用（`hydrate_template`） |
 
 ### 文档撰写约定
 

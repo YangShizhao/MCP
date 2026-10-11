@@ -127,8 +127,13 @@ dsh 不读取 `mcpServers` JSON，而是从 `~/.dsh/cordis.patch.yml`（Windows 
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `EXCEL_ALLOWLIST_ROOTS` | 允许访问的文件根目录（分号分隔） | — |
+| `EXCEL_ALLOWLIST_ROOTS` | 允许读写的工作簿根目录（**逗号**分隔，路径 `resolve()` 后按前缀判定；**读取同样受限**） | — |
+| `EXCEL_EXPORT_ROOTS` | 允许写出 PDF 的目录（**逗号**分隔）；`export_as_pdf` 必须配置它，否则直接报未配置 | — |
+| `EXCEL_CSV_EXPORT_ROOTS` | 允许写出 CSV 的目录（**分号**分隔，与上面两个变量不同） | — |
 | `EXCEL_ENABLE_WRITE` | 启用写操作 | `false` |
+| `EXCEL_ENABLE_COM` | 启用 COM 功能（导出 PDF、数据透视表、重算、VBA），需 Windows + MS Excel + pywin32 | `false` |
+
+> COM 工具会接管**正在运行的** Excel 实例并在结束时将其退出，调用前请先保存并关闭 Excel。
 
 ## 与其他 mcp-office 工具的区别
 
